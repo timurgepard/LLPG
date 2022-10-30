@@ -191,8 +191,6 @@ class DDPG():
                 self.ANN.save('./models/actor.h5')
                 self.QNN_pred.save('./models/critic_pred.h5')
                 self.QNN_target.save('./models/critic_target.h5')
-                #with open('buffer', 'wb') as file:
-                    #pickle.dump({'buffer': self.record}, file)
                 return
             except:
                 pass
@@ -267,7 +265,6 @@ class DDPG():
                                 self.QNN_update(self.St,self.At,self.Rt,self.Qt,self.St_,self.Qt_)
                                 self.ddpg_backprop(self.ANN, self.QNN_target, self.QNN_pred, self.ANN_Adam, self.St, self.dq_da_history, 4)
 
-
                         cnt += 1
                         t += 1
 
@@ -285,7 +282,7 @@ class DDPG():
                     self.save()
 
 
-
+            self.action_noise.reset()
             score_history.append(score)
             avg_score = np.mean(score_history[-10:])
             with open('Scores.txt', 'a+') as f:
@@ -364,10 +361,10 @@ ddpg = DDPG(     env , # Gym environment with continous action space
                  buffer=None,
                  max_buffer_size =2000000, # maximum transitions to be stored in buffer
                  batch_size = 100, # batch size for training actor and critic networks
-                 max_time_steps = 2000,# no of time steps per epoch
+                 max_time_steps = 5000,# no of time steps per epoch
                  clip = 300,
                  discount_factor  = 0.98,
-                 explore_time = 2000,
+                 explore_time = 5000,
                  actor_learning_rate = 0.0001,
                  critic_learning_rate = 0.001,
                  n_episodes = 1000000) # no of episodes to run
