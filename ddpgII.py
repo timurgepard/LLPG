@@ -1,13 +1,10 @@
 
-import multiprocessing as mp
 import ctypes
-from copy import deepcopy
 import tensorflow as tf
 import logging
 tf.get_logger().setLevel(logging.ERROR)
 from tensorflow.keras.optimizers import Adam, SGD
 import tensorflow_probability as tfp
-
 
 import random
 import pickle
@@ -21,8 +18,9 @@ from collections import deque
 
 import gym
 #import gym_vrep
-import pybulletgym
+#import pybulletgym
 import time
+
 
 def normalize(val, min, max):
     return (val - min)/(max - min)
@@ -60,11 +58,6 @@ class DDPG():
         self.observ_max = self.env.observation_space.high
         self.action_dim = action_dim = env.action_space.shape[0]
 
-        self.state_cache = []
-        self.reward_cache = []
-        self.TSt = None
-        self.At = None
-        self.Rt = None
         self.stack = []
         self.s_x = 0.0
         self.epsilon = 1.0
@@ -74,14 +67,11 @@ class DDPG():
         observation_dim = len(env.reset())
         self.state_dim = state_dim = observation_dim
 
-        self.exp_weights = np.ones((self.N_stm,1,observation_dim), dtype='float32')*np.exp(-(2/self.N_stm)*np.arange(0, self.N_stm, 1, dtype='float32')).reshape((self.N_stm, 1, 1))
-
         self.Q_log = []
         self.dq_da_history = []
         self.clip = clip
         self.T = max_time_steps + self.clip  ## Time limit for a episode
         self.stack_steps = max_time_steps
-
 
         self.ANN_Adam = Adam(self.act_learning_rate)
         self.QNN_Adam = Adam(self.critic_learning_rate)
@@ -89,17 +79,9 @@ class DDPG():
         self.record = Record(self.max_buffer_size, self.batch_size)
 
         self.ANN = _actor_network(self.state_dim, self.action_dim).model()
-
         self.QNN_pred = _critic_network(self.state_dim, self.action_dim).model()
-        self.QNN_pred.compile(loss='mse', optimizer=self.QNN_Adam)
-
         self.QNN_target = _critic_network(self.state_dim, self.action_dim).model()
         self.QNN_target.set_weights(self.QNN_pred.get_weights())
-        self.QNN_target.compile(loss='mse', optimizer=self.QNN_Adam)
-
-        self.agents_running = False
-
-        self.training = False
 
         #############################################
         #----Action based on exploration policy-----#
@@ -108,10 +90,10 @@ class DDPG():
     def forward(self, state):
         action = self.ANN(state)
         epsilon = max(self.epsilon, 0.1)
-        if random.uniform(0.0, 1.0)>self.epsilon:
+        if random.uniform(0.0, 1.0)>epsilon:
             action = action[0]
         else:
-            action = action[0] + tf.random.normal([self.action_dim], 0.0, 3*epsilon)
+            action = action[0] + tf.random.normal([self.action_dim], 0.0, 2*epsilon)
         return np.clip(action, -1.0, 1.0)
 
     def update_buffer(self):
@@ -172,11 +154,8 @@ class DDPG():
         Q = Rt + self.gamma*(Q_+Qt_)/2
         self.train_on_batch(self.QNN_pred, St, At, (Q+Qt)/2)
 
-    def sync_target(self):
-        self.QNN_target.set_weights(self.QNN_pred.get_weights())
 
     def clear_stack(self):
-
         self.state_cache = []
         self.reward_cache = []
         self.stack = []
@@ -212,17 +191,12 @@ class DDPG():
         self.rec = False
         for episode in range(self.n_episodes):
 
-            self.episode = episode
-
-            done = False
             score = 0.0
             state = np.array(self.env.reset(), dtype='float32').reshape(1, state_dim)
             self.epsilon_dt()
 
-            t = 0
-            done_cnt = 0
+            t, done_cnt, done, DONE = 0, 0, False, False
 
-            DONE = False
             while not DONE:
                 t = 0
                 done_cnt = 0
@@ -281,8 +255,6 @@ class DDPG():
                 if episode>=10 and episode%10==0:
                     self.save()
 
-
-            self.action_noise.reset()
             score_history.append(score)
             avg_score = np.mean(score_history[-10:])
             with open('Scores.txt', 'a+') as f:
@@ -303,8 +275,6 @@ class DDPG():
         score_history = []
 
         for episode in range(self.n_episodes):
-
-            self.episode = episode
 
             done = False
             score = 0.0
@@ -347,7 +317,12 @@ class DDPG():
             print('%d: %f, %f ' % (episode, score, avg_score))
 
 
+#env = gym.make('Pendulum-v0').env
+#env = gym.make('LunarLanderContinuous-v2').env
+#env = gym.make('HumanoidMuJoCoEnv-v0').env
+#env = gym.make('BipedalWalkerHardcore-v3').env
 env = gym.make('BipedalWalker-v3').env
+#env = gym.make('HalfCheetahMuJoCoEnv-v0').env
 
 
 ddpg = DDPG(     env , # Gym environment with continous action space
