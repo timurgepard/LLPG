@@ -1,5 +1,4 @@
 
-import ctypes
 import tensorflow as tf
 import logging
 tf.get_logger().setLevel(logging.ERROR)
@@ -93,7 +92,7 @@ class DDPG():
         if random.uniform(0.0, 1.0)>epsilon:
             action = action[0]
         else:
-            action = action[0] + tf.random.normal([self.action_dim], 0.0, 2*epsilon)
+            action = action[0] + tf.random.normal([self.action_dim], 0.0, epsilon)
         return np.clip(action, -1.0, 1.0)
 
     def update_buffer(self):
@@ -108,8 +107,7 @@ class DDPG():
                         Rk = self.stack[k][2]
                         Qt = Qt + discount*Rk
                         discount *= self.gamma
-                    Qt_ = (Qt - Rt)/self.gamma + self.stack[t+self.clip][2]*discount
-                    self.record.add_experience(TSt,At,Rt,Qt,TSt_,Qt_)
+                    self.record.add_experience(TSt,At,Rt,Qt,TSt_)
             self.stack = self.stack[-self.clip:]
 
 
@@ -123,7 +121,7 @@ class DDPG():
             tape.watch(a)
             q1 = critic1([tstates_batch, a])
             q2 = critic2([tstates_batch, a])
-            q = tf.math.minimum(q1,q2)
+            q = tf.math.maximum(q1, q2)
         dq_da = tape.gradient(q, a)
         dq_da_history.append(dq_da)
 
@@ -147,13 +145,12 @@ class DDPG():
         gradient = tape.gradient(atanh2, QNN.trainable_variables)
         self.QNN_Adam.apply_gradients(zip(gradient, QNN.trainable_variables))
 
-    def QNN_update(self,St,At,Rt,Qt,St_,Qt_):
+    def QNN_update(self,St,At,Rt,Qt,St_):
         self.train_on_batch(self.QNN_target, St, At, Qt)
         At_ = self.ANN(St_)
         Q_ = self.QNN_target([St_, At_])
-        Q = Rt + self.gamma*(Q_+Qt_)/2
-        self.train_on_batch(self.QNN_pred, St, At, (Q+Qt)/2)
-
+        Q = Rt + self.gamma*(Q_+Qt)/2
+        self.train_on_batch(self.QNN_pred, St, At, Q)
 
     def clear_stack(self):
         self.state_cache = []
@@ -178,7 +175,7 @@ class DDPG():
 
     def epsilon_dt(self):
         self.s_x += 0.01
-        self.epsilon = math.exp(-1.0*self.s_x)*math.cos(self.s_x)
+        self.epsilon = 0.5+math.exp(-1.0*self.s_x)*math.cos(self.s_x)
 
 
     def train(self):
@@ -235,9 +232,10 @@ class DDPG():
 
                         if len(self.record.buffer)>3*self.batch_size:
                             if cnt%(1+self.explore_time//cnt)==0:
-                                self.St, self.At, self.Rt, self.Qt, self.St_, self.Qt_ = self.record.sample_batch()
-                                self.QNN_update(self.St,self.At,self.Rt,self.Qt,self.St_,self.Qt_)
+                                self.St, self.At, self.Rt, self.Qt, self.St_ = self.record.sample_batch()
+                                self.QNN_update(self.St,self.At,self.Rt,self.Qt,self.St_)
                                 self.ddpg_backprop(self.ANN, self.QNN_target, self.QNN_pred, self.ANN_Adam, self.St, self.dq_da_history, 4)
+                                #self.QNN_target.set_weights(self.QNN_pred.get_weights())
 
                         cnt += 1
                         t += 1
@@ -331,9 +329,9 @@ ddpg = DDPG(     env , # Gym environment with continous action space
                  buffer=None,
                  max_buffer_size =100000, # maximum transitions to be stored in buffer
                  batch_size = 100, # batch size for training actor and critic networks
-                 max_time_steps = 5000,# no of time steps per epoch
-                 clip = 300,
-                 discount_factor  = 0.98,
+                 max_time_steps = 2000,# no of time steps per epoch
+                 clip = 125,
+                 discount_factor  = 0.97,
                  explore_time = 5000,
                  actor_learning_rate = 0.0001,
                  critic_learning_rate = 0.001,
