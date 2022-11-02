@@ -122,29 +122,23 @@ class DDPG():
             a = actor(tstates_batch)
             tape.watch(a)
             q = critic([tstates_batch, a])
-            #q2 = critic2([tstates_batch, a])
-            #q = tf.math.maximum(q1, q2)
         dq_da = tape.gradient(q, a)
         dq_da_history.append(dq_da)
-
-        if len(dq_da_history)>N:
-            dq_da_history = dq_da_history[-N:]
-            dq_da = np.mean(dq_da_history, axis=0)
+        dq_da_history = dq_da_history[-N:]
+        dq_da = np.mean(dq_da_history, axis=0)
 
         with tf.GradientTape(persistent=True) as tape:
             a = actor(tstates_batch)
             theta = actor.trainable_variables
-
         dq_da = np.abs(dq_da)*np.tanh(dq_da)
-
         da_dtheta = tape.gradient(a, theta, output_gradients=-dq_da)
         optimizer.apply_gradients(zip(da_dtheta, actor.trainable_variables))
 
 
     def train_on_batch(self,QNN,St,At,Q):
         with tf.GradientTape() as tape:
-            e = Q-QNN([St, At])
-            atanh2 = tf.math.abs(e)*tf.math.tanh(e**2)
+            e = (Q-QNN([St, At]))**2
+            atanh2 = tf.math.sqrt(e)*tf.math.tanh(e)
         gradient = tape.gradient(atanh2, QNN.trainable_variables)
         self.QNN_Adam.apply_gradients(zip(gradient, QNN.trainable_variables))
 
@@ -330,7 +324,12 @@ class DDPG():
             print('%d: %f, %f ' % (episode, score, avg_score))
 
 
+#env = gym.make('Pendulum-v0').env
+#env = gym.make('LunarLanderContinuous-v2').env
+#env = gym.make('HumanoidMuJoCoEnv-v0').env
+#env = gym.make('BipedalWalkerHardcore-v3').env
 env = gym.make('BipedalWalker-v3').env
+#env = gym.make('HalfCheetahMuJoCoEnv-v0').env
 
 
 ddpg = DDPG(     env , # Gym environment with continous action space
