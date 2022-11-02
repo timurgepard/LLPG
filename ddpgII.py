@@ -91,7 +91,7 @@ class DDPG():
     def forward(self, state):
         action = self.ANN(state)
         epsilon = max(self.epsilon, 0.1)
-        if random.uniform(0.0, 1.0)>epsilon:
+        if random.uniform(0.0, 2.0)>epsilon:
             action = action[0]
         else:
             action = action[0] + tf.random.normal([self.action_dim], 0.0, epsilon)
