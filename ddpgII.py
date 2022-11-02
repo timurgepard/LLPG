@@ -122,8 +122,7 @@ class DDPG():
             a = actor(tstates_batch)
             tape.watch(a)
             q = critic([tstates_batch, a])
-        dq_da = tape.gradient(q, a)
-        dq_da_history.append(dq_da)
+        dq_da_history.append(tape.gradient(q, a))
         dq_da_history = dq_da_history[-N:]
         dq_da = np.mean(dq_da_history, axis=0)
 
