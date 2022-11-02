@@ -324,12 +324,7 @@ class DDPG():
             print('%d: %f, %f ' % (episode, score, avg_score))
 
 
-#env = gym.make('Pendulum-v0').env
-#env = gym.make('LunarLanderContinuous-v2').env
-#env = gym.make('HumanoidMuJoCoEnv-v0').env
-#env = gym.make('BipedalWalkerHardcore-v3').env
 env = gym.make('BipedalWalker-v3').env
-#env = gym.make('HalfCheetahMuJoCoEnv-v0').env
 
 
 ddpg = DDPG(     env , # Gym environment with continous action space
