@@ -117,7 +117,7 @@ class DDPG():
     # --------------Update Networks--------------#
     #############################################
 
-    def ddpg_backprop(self, actor, critic, optimizer, tstates_batch, dq_da_history, N):
+    def ANN_update(self, actor, critic, optimizer, tstates_batch, dq_da_history, N):
         with tf.GradientTape(persistent=True) as tape:
             a = actor(tstates_batch)
             tape.watch(a)
@@ -189,7 +189,6 @@ class DDPG():
         state_dim = len(self.env.reset())
         cnt = 1
         score_history = []
-        self.rec = False
         print('ep: score, avg, | eps | record size ')
         for episode in range(self.n_episodes):
 
@@ -243,8 +242,7 @@ class DDPG():
                                 else:
                                     self.QNN_target.set_weights(self.QNN_pred.get_weights())
                                     self.TD_lambda(self.St,self.At,self.Rt,self.Qt,self.St_)
-                                self.ddpg_backprop(self.ANN, self.QNN_pred, self.ANN_Adam, self.St, self.dq_da_history, 4)
-
+                                self.ANN_update(self.ANN, self.QNN_pred, self.ANN_Adam, self.St, self.dq_da_history, 4)
 
                         cnt += 1
                         t += 1
