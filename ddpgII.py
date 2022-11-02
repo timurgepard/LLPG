@@ -82,6 +82,8 @@ class DDPG():
         self.QNN_target = _critic_network(self.state_dim, self.action_dim).model()
         self.QNN_target.set_weights(self.QNN_pred.get_weights())
 
+        self.percentage = 0.1/math.log(0.1)
+
         #############################################
         #----Action based on exploration policy-----#
         #############################################
@@ -115,13 +117,13 @@ class DDPG():
     # --------------Update Networks--------------#
     #############################################
 
-    def ddpg_backprop(self, actor, critic1, critic2, optimizer, tstates_batch, dq_da_history, N):
+    def ddpg_backprop(self, actor, critic, optimizer, tstates_batch, dq_da_history, N):
         with tf.GradientTape(persistent=True) as tape:
             a = actor(tstates_batch)
             tape.watch(a)
-            q1 = critic1([tstates_batch, a])
-            q2 = critic2([tstates_batch, a])
-            q = tf.math.maximum(q1, q2)
+            q = critic([tstates_batch, a])
+            #q2 = critic2([tstates_batch, a])
+            #q = tf.math.maximum(q1, q2)
         dq_da = tape.gradient(q, a)
         dq_da_history.append(dq_da)
 
@@ -129,11 +131,12 @@ class DDPG():
             dq_da_history = dq_da_history[-N:]
             dq_da = np.mean(dq_da_history, axis=0)
 
-
         with tf.GradientTape(persistent=True) as tape:
             a = actor(tstates_batch)
             theta = actor.trainable_variables
+
         dq_da = np.abs(dq_da)*np.tanh(dq_da)
+
         da_dtheta = tape.gradient(a, theta, output_gradients=-dq_da)
         optimizer.apply_gradients(zip(da_dtheta, actor.trainable_variables))
 
@@ -145,12 +148,19 @@ class DDPG():
         gradient = tape.gradient(atanh2, QNN.trainable_variables)
         self.QNN_Adam.apply_gradients(zip(gradient, QNN.trainable_variables))
 
-    def QNN_update(self,St,At,Rt,Qt,St_):
+    def TD_secure(self,St,At,Rt,Qt,St_):
         self.train_on_batch(self.QNN_target, St, At, Qt)
         At_ = self.ANN(St_)
         Q_ = self.QNN_target([St_, At_])
         Q = Rt + self.gamma*(Q_+Qt)/2
         self.train_on_batch(self.QNN_pred, St, At, Q)
+
+    def TD_lambda(self,St,At,Rt,Qt,St_):
+        At_ = self.ANN(St_)
+        Q_ = self.QNN_target([St_, At_])
+        Q = Rt + self.gamma*Q_
+        self.train_on_batch(self.QNN_pred, St, At, Q)
+
 
     def clear_stack(self):
         self.state_cache = []
@@ -175,7 +185,7 @@ class DDPG():
 
     def epsilon_dt(self):
         self.s_x += 0.01
-        self.epsilon = 0.5+math.exp(-1.0*self.s_x)*math.cos(self.s_x)
+        self.epsilon = 2*math.exp(-1.0*self.s_x)*math.cos(self.s_x)
 
 
     def train(self):
@@ -186,6 +196,7 @@ class DDPG():
         cnt = 1
         score_history = []
         self.rec = False
+        print('ep: score, avg, | eps | record size ')
         for episode in range(self.n_episodes):
 
             score = 0.0
@@ -233,9 +244,13 @@ class DDPG():
                         if len(self.record.buffer)>3*self.batch_size:
                             if cnt%(1+self.explore_time//cnt)==0:
                                 self.St, self.At, self.Rt, self.Qt, self.St_ = self.record.sample_batch()
-                                self.QNN_update(self.St,self.At,self.Rt,self.Qt,self.St_)
-                                self.ddpg_backprop(self.ANN, self.QNN_target, self.QNN_pred, self.ANN_Adam, self.St, self.dq_da_history, 4)
-                                #self.QNN_target.set_weights(self.QNN_pred.get_weights())
+                                if t%2 ==0:
+                                    self.TD_secure(self.St,self.At,self.Rt,self.Qt,self.St_)
+                                else:
+                                    self.QNN_target.set_weights(self.QNN_pred.get_weights())
+                                    self.TD_lambda(self.St,self.At,self.Rt,self.Qt,self.St_)
+                                self.ddpg_backprop(self.ANN, self.QNN_pred, self.ANN_Adam, self.St, self.dq_da_history, 4)
+
 
                         cnt += 1
                         t += 1
@@ -315,12 +330,7 @@ class DDPG():
             print('%d: %f, %f ' % (episode, score, avg_score))
 
 
-#env = gym.make('Pendulum-v0').env
-#env = gym.make('LunarLanderContinuous-v2').env
-#env = gym.make('HumanoidMuJoCoEnv-v0').env
-#env = gym.make('BipedalWalkerHardcore-v3').env
 env = gym.make('BipedalWalker-v3').env
-#env = gym.make('HalfCheetahMuJoCoEnv-v0').env
 
 
 ddpg = DDPG(     env , # Gym environment with continous action space
@@ -330,9 +340,9 @@ ddpg = DDPG(     env , # Gym environment with continous action space
                  max_buffer_size =100000, # maximum transitions to be stored in buffer
                  batch_size = 100, # batch size for training actor and critic networks
                  max_time_steps = 2000,# no of time steps per epoch
-                 clip = 125,
-                 discount_factor  = 0.97,
-                 explore_time = 5000,
+                 clip = 200,
+                 discount_factor  = 0.98,
+                 explore_time = 2000,
                  actor_learning_rate = 0.0001,
                  critic_learning_rate = 0.001,
                  n_episodes = 1000000) # no of episodes to run
