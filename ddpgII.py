@@ -2,7 +2,7 @@
 import tensorflow as tf
 import logging
 tf.get_logger().setLevel(logging.ERROR)
-from tensorflow.keras.optimizers import Adam, SGD
+from tensorflow.keras.optimizers import Adam, SGD, Adagrad
 import tensorflow_probability as tfp
 
 import random
@@ -17,8 +17,9 @@ from collections import deque
 
 import gym
 #import gym_vrep
-#import pybulletgym
+import pybulletgym
 import time
+from ou_noise import OUActionNoise
 
 
 def normalize(val, min, max):
@@ -57,39 +58,39 @@ class DDPG():
         self.observ_max = self.env.observation_space.high
         self.action_dim = action_dim = env.action_space.shape[0]
 
-        self.stack = []
+
         self.s_x = 0.0
         self.epsilon = 1.0
-        self.Q = [-9999.0]
 
-        self.N_stm = 10
         observation_dim = len(env.reset())
         self.state_dim = state_dim = observation_dim
 
-        self.Q_log = []
-        self.dq_da_history = []
         self.clip = clip
-        self.T = max_time_steps + self.clip  ## Time limit for a episode
+        self.T = max_time_steps  ## Time limit for a episode
         self.stack_steps = max_time_steps
+
+        self.ANN_Adagrad = Adagrad(self.act_learning_rate)
+        self.QNN_Adagrad = Adagrad(self.critic_learning_rate)
 
         self.ANN_Adam = Adam(self.act_learning_rate)
         self.QNN_Adam = Adam(self.critic_learning_rate)
 
+        self.stack = []
+        self.dq_da_history = []
         self.record = Record(self.max_buffer_size, self.batch_size)
 
-        self.ANN = _actor_network(self.state_dim, self.action_dim).model()
-        self.QNN_pred = _critic_network(self.state_dim, self.action_dim).model()
+        self.ANN_target = _actor_network(self.state_dim, self.action_dim).model()
+        self.ANN_pred = _actor_network(self.state_dim, self.action_dim).model()
         self.QNN_target = _critic_network(self.state_dim, self.action_dim).model()
-        self.QNN_target.set_weights(self.QNN_pred.get_weights())
+        self.QNN_pred = _critic_network(self.state_dim, self.action_dim).model()
 
-        self.percentage = 0.1/math.log(0.1)
 
         #############################################
         #----Action based on exploration policy-----#
         #############################################
 
     def forward(self, state):
-        action = self.ANN(state)
+        action = self.ANN_pred(state)
         epsilon = max(self.epsilon, 0.1)
         if random.uniform(0.0, 2.0)>epsilon:
             action = action[0]
@@ -107,7 +108,7 @@ class DDPG():
                     discount = 1.0
                     for k in range(t, t+self.clip):
                         Rk = self.stack[k][2]
-                        Qt = Qt + discount*Rk
+                        Qt = Qt + discount*Rk # here Q is calcualted
                         discount *= self.gamma
                     self.record.add_experience(TSt,At,Rt,Qt,TSt_)
             self.stack = self.stack[-self.clip:]
@@ -117,43 +118,40 @@ class DDPG():
     # --------------Update Networks--------------#
     #############################################
 
-    def ANN_update(self, actor, critic, optimizer, tstates_batch, dq_da_history, N):
+    def ANN_update(self, ANN, QNN, opt, tstates_batch):
         with tf.GradientTape(persistent=True) as tape:
-            a = actor(tstates_batch)
-            tape.watch(a)
-            q = critic([tstates_batch, a])
-        dq_da_history.append(tape.gradient(q, a))
-        dq_da_history = dq_da_history[-N:]
-        dq_da = np.mean(dq_da_history, axis=0)
+            a = ANN(tstates_batch)
+            q = -QNN([tstates_batch, a])        #minus sign makes Q increase
+            q = tf.math.abs(q)*tf.math.tanh(q)  #smothes learning, prevents convergence to local optimum, prediction errors, etc.
+        dq_dw = tape.gradient(q, ANN.trainable_variables)
+        opt.apply_gradients(zip(dq_dw, ANN.trainable_variables))
 
-        with tf.GradientTape(persistent=True) as tape:
-            a = actor(tstates_batch)
-            theta = actor.trainable_variables
-        dq_da = np.abs(dq_da)*np.tanh(dq_da)
-        da_dtheta = tape.gradient(a, theta, output_gradients=-dq_da)
-        optimizer.apply_gradients(zip(da_dtheta, actor.trainable_variables))
-
-
-    def train_on_batch(self,QNN,St,At,Q):
+    def QNN_update(self,QNN,opt,St,At,Q):
         with tf.GradientTape() as tape:
             e = (Q-QNN([St, At]))**2
-            atanh2 = tf.math.sqrt(e)*tf.math.tanh(e)
-        gradient = tape.gradient(atanh2, QNN.trainable_variables)
-        self.QNN_Adam.apply_gradients(zip(gradient, QNN.trainable_variables))
+            atanh2 = tf.math.sqrt(e)*tf.math.tanh(e)   #secures against outliers, quadratic between ~ 0 to 1, linear after
+        de_dw = tape.gradient(atanh2, QNN.trainable_variables)
+        opt.apply_gradients(zip(de_dw, QNN.trainable_variables))
 
-    def TD_secure(self,St,At,Rt,Qt,St_):
-        self.train_on_batch(self.QNN_target, St, At, Qt)
-        At_ = self.ANN(St_)
-        Q_ = self.QNN_target([St_, At_])
-        Q = Rt + self.gamma*(Q_+Qt)/2
-        self.train_on_batch(self.QNN_pred, St, At, Q)
-
-    def TD_lambda(self,St,At,Rt,Qt,St_):
-        At_ = self.ANN(St_)
+    def TD_secure(self):
+        St, At, Rt, Qt, St_ = self.record.sample_batch() #samples replay memory, contains correct Q value (Qt)
+        self.update_target(self.QNN_target, self.QNN_pred, 0.001)   #tau update critic
+        self.update_target(self.ANN_target, self.ANN_pred, 0.001)   #tau update actor
+        At_ = self.ANN_target(St_)
         Q_ = self.QNN_target([St_, At_])
         Q = Rt + self.gamma*Q_
-        self.train_on_batch(self.QNN_pred, St, At, Q)
+        self.QNN_update(self.QNN_pred, self.QNN_Adam, St, At, 0.5*(Q+Qt)) #trains on TD (Q) and Monte-Carlo rollout (Qt)
+        self.ANN_update(self.ANN_pred, self.QNN_pred, self.ANN_Adam, St)
 
+
+    def update_target(self, target, online, tow):
+        init_weights = online.get_weights()
+        update_weights = target.get_weights()
+        weights = []
+        for i in tf.range(len(init_weights)):
+            weights.append(tow * init_weights[i] + (1 - tow) * update_weights[i])
+        target.set_weights(weights)
+        return target
 
     def clear_stack(self):
         self.state_cache = []
@@ -175,10 +173,9 @@ class DDPG():
                 pass
 
 
-
     def epsilon_dt(self):
         self.s_x += 0.01
-        self.epsilon = 2*math.exp(-1.0*self.s_x)*math.cos(self.s_x)
+        self.epsilon = 2.0*math.exp(-1.0*self.s_x)*math.cos(self.s_x)
 
 
     def train(self):
@@ -195,15 +192,14 @@ class DDPG():
             state = np.array(self.env.reset(), dtype='float32').reshape(1, state_dim)
             self.epsilon_dt()
 
-            t, done_cnt, done, DONE = 0, 0, False, False
+            t, done_cnt, done = 0, 0, False
 
-            while not DONE:
+            while not done:
                 t = 0
                 done_cnt = 0
                 distribute = False
                 reward = 0.0
 
-                DONE = False
                 for _ in range(self.T+self.clip):
                     if reward: last_reward = reward
 
@@ -214,39 +210,28 @@ class DDPG():
                     if t>=self.T: done = True
 
                     if done:
-                        if DONE==False: DONE=True
-
-                    if DONE:
                         if done_cnt == 0:
                             score += reward
                             if (abs(reward)>10*abs(last_reward)): distribute = True
 
-                        if distribute: reward = reward/self.clip
+                        if distribute: reward /= self.clip
 
                         if done_cnt>self.clip:
-                            done_cnt = 0
                             break
                         else:
                             done_cnt += 1
                     else:
                         score += reward
-
                         self.env.render()
 
                         if len(self.record.buffer)>3*self.batch_size:
-                            if cnt%(1+self.explore_time//cnt)==0:
-                                self.St, self.At, self.Rt, self.Qt, self.St_ = self.record.sample_batch()
-                                if t%2 ==0:
-                                    self.TD_secure(self.St,self.At,self.Rt,self.Qt,self.St_)
-                                else:
-                                    self.QNN_target.set_weights(self.QNN_pred.get_weights())
-                                    self.TD_lambda(self.St,self.At,self.Rt,self.Qt,self.St_)
-                                self.ANN_update(self.ANN, self.QNN_pred, self.ANN_Adam, self.St, self.dq_da_history, 4)
+                            if cnt%(1+self.explore_time//cnt)==0:  #this just makes training starting gradually
+                                self.TD_secure()
 
                         cnt += 1
                         t += 1
 
-                        if len(self.stack)>=(20 + self.clip) and cnt%20 == 0:
+                        if len(self.stack)>=(20 + self.clip) and cnt%20 == 0: # replay buffer is populated each 20 steps, after steps is enough for Qt.
                             self.update_buffer()
 
                     self.stack.append([state, action, reward, state_next])
@@ -254,7 +239,6 @@ class DDPG():
 
                 self.update_buffer()
                 self.stack = []
-
 
                 if episode>=10 and episode%10==0:
                     self.save()
@@ -295,7 +279,6 @@ class DDPG():
                 state_next, reward, done, info = self.env.step(action)  # step returns obs+1, reward, done
                 state_next = np.array(state_next).reshape(1, state_dim)
 
-
                 if done:
                     if reward <=-100 or reward >=100:
                         reward = reward/self.clip
@@ -320,7 +303,8 @@ class DDPG():
 
             print('%d: %f, %f ' % (episode, score, avg_score))
 
-
+#env = gym.make('Pendulum-v0').env
+#env = gym.make('LunarLanderContinuous-v2').env
 env = gym.make('BipedalWalker-v3').env
 
 
@@ -331,9 +315,9 @@ ddpg = DDPG(     env , # Gym environment with continous action space
                  max_buffer_size =100000, # maximum transitions to be stored in buffer
                  batch_size = 100, # batch size for training actor and critic networks
                  max_time_steps = 2000,# no of time steps per epoch
-                 clip = 200,
-                 discount_factor  = 0.98,
-                 explore_time = 2000,
+                 clip = 100, # Q is calculated till n-steps, even after termination for correctness
+                 discount_factor  = 0.97,
+                 explore_time = 5000,
                  actor_learning_rate = 0.0001,
                  critic_learning_rate = 0.001,
                  n_episodes = 1000000) # no of episodes to run
