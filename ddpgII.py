@@ -19,7 +19,6 @@ import gym
 #import gym_vrep
 import pybulletgym
 import time
-from ou_noise import OUActionNoise
 
 
 def normalize(val, min, max):
