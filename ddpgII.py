@@ -73,8 +73,8 @@ class DDPG():
         self.ANN_SGD = SGD(self.act_learning_rate)
         self.QNN_SGD = SGD(self.critic_learning_rate)
 
-        self.ANN_Adagrad = Adagrad(10*self.act_learning_rate, clipnorm=0.01)
-        self.QNN_Adagrad = Adagrad(10*self.critic_learning_rate, clipnorm=0.01)
+        self.ANN_Adagrad = Adagrad(2*self.act_learning_rate, clipnorm=0.01)
+        self.QNN_Adagrad = Adagrad(2*self.critic_learning_rate, clipnorm=0.01)
 
         self.ANN_Adam = Adam(self.act_learning_rate)
         self.QNN_Adam = Adam(self.critic_learning_rate)
