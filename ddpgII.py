@@ -121,7 +121,7 @@ class DDPG():
         with tf.GradientTape(persistent=True) as tape:
             a = ANN(tstates_batch)
             q = -QNN([tstates_batch, a])        #minus sign makes Q increase
-            q = tf.math.abs(q)*tf.math.tanh(q)  #comment for simple tasks, smothes learning, prevents convergence to local optimum, prediction errors, etc.
+            #q = tf.math.abs(q)*tf.math.tanh(q)  #comment for simple tasks, smothes learning, prevents convergence to local optimum, prediction errors, etc.
         dq_dw = tape.gradient(q, ANN.trainable_variables)
         opt.apply_gradients(zip(dq_dw, ANN.trainable_variables))
 
@@ -302,7 +302,7 @@ class DDPG():
 
             print('%d: %f, %f ' % (episode, score, avg_score))
 
-option = 1
+option = 3
 
 if option == 1:
     env = gym.make('Pendulum-v0').env
@@ -316,7 +316,7 @@ elif option == 2:
     critic_learning_rate = 0.001
 elif option == 3:
     env = gym.make('BipedalWalker-v3').env
-    max_time_steps = 1000
+    max_time_steps = 2000
     actor_learning_rate = 0.0001
     critic_learning_rate = 0.001
 else:
@@ -332,7 +332,7 @@ ddpg = DDPG(     env , # Gym environment with continous action space
                  max_buffer_size =100000, # maximum transitions to be stored in buffer
                  batch_size = 100, # batch size for training actor and critic networks
                  max_time_steps = max_time_steps,# no of time steps per epoch
-                 clip = 100, # Q is calculated till n-steps, even after termination for correctness
+                 clip = 200, # Q is calculated till n-steps, even after termination for correctness
                  discount_factor  = 0.97,
                  explore_time = 5000,
                  actor_learning_rate = actor_learning_rate,
