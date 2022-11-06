@@ -30,6 +30,7 @@ class DDPG():
                  actor=None,
                  critic=None,
                  buffer=None,
+                 epsilon_step = 0.01,
                  max_buffer_size =10000, # maximum transitions to be stored in buffer
                  batch_size =64, # batch size for training actor and critic networks
                  max_time_steps = 1000 ,# no of time steps per epoch
@@ -60,6 +61,7 @@ class DDPG():
 
         self.s_x = 0.0
         self.epsilon = 1.0
+        self.epsilon_step = epsilon_step
 
         observation_dim = len(env.reset())
         self.state_dim = state_dim = observation_dim
@@ -68,8 +70,11 @@ class DDPG():
         self.T = max_time_steps  ## Time limit for a episode
         self.stack_steps = max_time_steps
 
-        self.ANN_Adagrad = Adagrad(self.act_learning_rate)
-        self.QNN_Adagrad = Adagrad(self.critic_learning_rate)
+        self.ANN_SGD = SGD(self.act_learning_rate)
+        self.QNN_SGD = SGD(self.critic_learning_rate)
+
+        self.ANN_Adagrad = Adagrad(10*self.act_learning_rate, clipnorm=0.01)
+        self.QNN_Adagrad = Adagrad(10*self.critic_learning_rate, clipnorm=0.01)
 
         self.ANN_Adam = Adam(self.act_learning_rate)
         self.QNN_Adam = Adam(self.critic_learning_rate)
@@ -139,8 +144,8 @@ class DDPG():
         At_ = self.ANN_target(St_)
         Q_ = self.QNN_target([St_, At_])
         Q = Rt + self.gamma*Q_
-        self.QNN_update(self.QNN_pred, self.QNN_Adam, St, At, 0.5*(Q+Qt)) #trains on TD (Q) and Monte-Carlo rollout (Qt)
-        self.ANN_update(self.ANN_pred, self.QNN_pred, self.ANN_Adam, St)
+        self.QNN_update(self.QNN_pred, self.QNN_Adagrad, St, At, 0.5*(Q+Qt)) #trains on TD (Q) and Monte-Carlo rollout (Qt)
+        self.ANN_update(self.ANN_pred, self.QNN_pred, self.ANN_Adagrad, St)
 
 
     def update_target(self, target, online, tow):
@@ -159,21 +164,14 @@ class DDPG():
 
 
     def save(self):
-        result = 0
-        while result<10:
-            time.sleep(0.01)
-            try:
-                result += 1
-                self.ANN.save('./models/actor.h5')
-                self.QNN_pred.save('./models/critic_pred.h5')
-                self.QNN_target.save('./models/critic_target.h5')
-                return
-            except:
-                pass
+        self.ANN_target.save('./models/actor_target.h5')
+        self.ANN_pred.save('./models/actor_pred.h5')
+        self.QNN_pred.save('./models/critic_pred.h5')
+        self.QNN_target.save('./models/critic_target.h5')
 
 
     def epsilon_dt(self):
-        self.s_x += 0.01
+        self.s_x += self.epsilon_step
         self.epsilon = math.exp(-1.0*self.s_x)*math.cos(self.s_x)
 
 
@@ -295,40 +293,58 @@ class DDPG():
 
 
             score_history.append(score)
-            avg_score = np.mean(score_history[-10:])
+            avg_score = np.mean(score_history[-100:])
 
             with open('Scores.txt', 'a+') as f:
                 f.write(str(score) + '\n')
 
             print('%d: %f, %f ' % (episode, score, avg_score))
 
-option = 3
+option = 4
 
 if option == 1:
     env = gym.make('Pendulum-v0').env
     max_time_steps = 200
+    epsilon_step = 0.01
     actor_learning_rate = 0.001
     critic_learning_rate = 0.01
 elif option == 2:
     env = gym.make('LunarLanderContinuous-v2').env
     max_time_steps = 400
+    epsilon_step = 0.01
     actor_learning_rate = 0.0001
     critic_learning_rate = 0.001
 elif option == 3:
     env = gym.make('BipedalWalker-v3').env
     max_time_steps = 2000
+    epsilon_step = 0.01
+    actor_learning_rate = 0.0001
+    critic_learning_rate = 0.001
+elif option == 4:
+    env = gym.make('HumanoidPyBulletEnv-v0')
+    max_time_steps = 200
+    epsilon_step = 0.001
+    actor_learning_rate = 0.0001
+    critic_learning_rate = 0.001
+elif option == 5:
+    env = gym.make('HalfCheetahPyBulletEnv-v0')
+    max_time_steps = 200
+    epsilon_step = 0.001
     actor_learning_rate = 0.0001
     critic_learning_rate = 0.001
 else:
     print("add environment")
     max_time_steps = 200
+    epsilon_step = 0.001
     actor_learning_rate = 0.0001
     critic_learning_rate = 0.001
+
 
 ddpg = DDPG(     env , # Gym environment with continous action space
                  actor=None,
                  critic=None,
                  buffer=None,
+                 epsilon_step = epsilon_step,
                  max_buffer_size =100000, # maximum transitions to be stored in buffer
                  batch_size = 100, # batch size for training actor and critic networks
                  max_time_steps = max_time_steps,# no of time steps per epoch
