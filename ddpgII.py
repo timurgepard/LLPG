@@ -121,7 +121,7 @@ class DDPG():
         with tf.GradientTape(persistent=True) as tape:
             a = ANN(tstates_batch)
             q = -QNN([tstates_batch, a])        #minus sign makes Q increase
-            #q = tf.math.abs(q)*tf.math.tanh(q)  #comment for simple tasks, smothes learning, prevents convergence to local optimum, prediction errors, etc.
+            q = tf.math.abs(q)*tf.math.tanh(q)  #smothes learning, prevents convergence to local optimum, prediction errors, etc.
         dq_dw = tape.gradient(q, ANN.trainable_variables)
         opt.apply_gradients(zip(dq_dw, ANN.trainable_variables))
 
