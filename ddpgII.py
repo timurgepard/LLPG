@@ -90,11 +90,11 @@ class DDPG():
 
     def forward(self, state):
         action = self.ANN_pred(state)
-        epsilon = max(self.epsilon, 0.1)
-        if random.uniform(0.0, 2.0)>epsilon:
+        epsilon = max(self.epsilon, 0.2)
+        if random.uniform(0.0, 1.0)>epsilon:
             action = action[0]
         else:
-            action = action[0] + tf.random.normal([self.action_dim], 0.0, epsilon)
+            action = action[0] + tf.random.normal([self.action_dim], 0.0, 2*epsilon)
         return np.clip(action, -1.0, 1.0)
 
     def update_buffer(self):
@@ -109,7 +109,7 @@ class DDPG():
                         Rk = self.stack[k][2]
                         Qt = Qt + discount*Rk # here Q is calcualted
                         discount *= self.gamma
-                    self.record.add_experience(TSt,At,Rt,Qt,TSt_)
+                    self.record.add_experience(TSt,At,0.01*Rt,0.01*Qt,TSt_) #Rt, Qt -> closer to action space.
             self.stack = self.stack[-self.clip:]
 
 
@@ -121,7 +121,7 @@ class DDPG():
         with tf.GradientTape(persistent=True) as tape:
             a = ANN(tstates_batch)
             q = -QNN([tstates_batch, a])        #minus sign makes Q increase
-            q = tf.math.abs(q)*tf.math.tanh(q)  #smothes learning, prevents convergence to local optimum, prediction errors, etc.
+            q = tf.math.abs(q)*tf.math.tanh(q)  #comment for simple tasks, smothes learning, prevents convergence to local optimum, prediction errors, etc.
         dq_dw = tape.gradient(q, ANN.trainable_variables)
         opt.apply_gradients(zip(dq_dw, ANN.trainable_variables))
 
@@ -174,7 +174,7 @@ class DDPG():
 
     def epsilon_dt(self):
         self.s_x += 0.01
-        self.epsilon = 2.0*math.exp(-1.0*self.s_x)*math.cos(self.s_x)
+        self.epsilon = math.exp(-1.0*self.s_x)*math.cos(self.s_x)
 
 
     def train(self):
@@ -302,10 +302,28 @@ class DDPG():
 
             print('%d: %f, %f ' % (episode, score, avg_score))
 
-#env = gym.make('Pendulum-v0').env
-#env = gym.make('LunarLanderContinuous-v2').env
-env = gym.make('BipedalWalker-v3').env
+option = 1
 
+if option == 1:
+    env = gym.make('Pendulum-v0').env
+    max_time_steps = 200
+    actor_learning_rate = 0.001
+    critic_learning_rate = 0.01
+elif option == 2:
+    env = gym.make('LunarLanderContinuous-v2').env
+    max_time_steps = 400
+    actor_learning_rate = 0.0001
+    critic_learning_rate = 0.001
+elif option == 3:
+    env = gym.make('BipedalWalker-v3').env
+    max_time_steps = 1000
+    actor_learning_rate = 0.0001
+    critic_learning_rate = 0.001
+else:
+    print("add environment")
+    max_time_steps = 200
+    actor_learning_rate = 0.0001
+    critic_learning_rate = 0.001
 
 ddpg = DDPG(     env , # Gym environment with continous action space
                  actor=None,
@@ -313,12 +331,12 @@ ddpg = DDPG(     env , # Gym environment with continous action space
                  buffer=None,
                  max_buffer_size =100000, # maximum transitions to be stored in buffer
                  batch_size = 100, # batch size for training actor and critic networks
-                 max_time_steps = 2000,# no of time steps per epoch
+                 max_time_steps = max_time_steps,# no of time steps per epoch
                  clip = 100, # Q is calculated till n-steps, even after termination for correctness
                  discount_factor  = 0.97,
                  explore_time = 5000,
-                 actor_learning_rate = 0.0001,
-                 critic_learning_rate = 0.001,
+                 actor_learning_rate = actor_learning_rate,
+                 critic_learning_rate = critic_learning_rate,
                  n_episodes = 1000000) # no of episodes to run
 
 
