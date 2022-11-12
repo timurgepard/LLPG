@@ -1,8 +1,10 @@
-
+import multiprocessing as mp
+import ctypes
+import os
 import tensorflow as tf
 import logging
 tf.get_logger().setLevel(logging.ERROR)
-from tensorflow.keras.optimizers import Adam, SGD, Adagrad
+from tensorflow.keras.optimizers import Adam, SGD, Adagrad, Adadelta
 import tensorflow_probability as tfp
 
 import random
@@ -14,6 +16,7 @@ from buffer import Record
 from actor_critic import _actor_network,_critic_network
 import math
 from collections import deque
+from ou_noise import OUActionNoise
 
 import gym
 #import gym_vrep
@@ -23,6 +26,7 @@ import time
 
 def normalize(val, min, max):
     return (val - min)/(max - min)
+
 
 class DDPG():
     def __init__(self,
@@ -58,10 +62,9 @@ class DDPG():
         self.observ_max = self.env.observation_space.high
         self.action_dim = action_dim = env.action_space.shape[0]
 
-
         self.s_x = 0.0
-        self.epsilon = 1.0
-        self.epsilon_step = epsilon_step
+        self.eps = 1.0
+        self.eps_step = epsilon_step
 
         observation_dim = len(env.reset())
         self.state_dim = state_dim = observation_dim
@@ -70,12 +73,6 @@ class DDPG():
         self.T = max_time_steps  ## Time limit for a episode
         self.stack_steps = max_time_steps
 
-        self.ANN_SGD = SGD(self.act_learning_rate)
-        self.QNN_SGD = SGD(self.critic_learning_rate)
-
-        self.ANN_Adagrad = Adagrad(2*self.act_learning_rate, clipnorm=0.01)
-        self.QNN_Adagrad = Adagrad(2*self.critic_learning_rate, clipnorm=0.01)
-
         self.ANN_Adam = Adam(self.act_learning_rate)
         self.QNN_Adam = Adam(self.critic_learning_rate)
 
@@ -83,79 +80,64 @@ class DDPG():
         self.dq_da_history = []
         self.record = Record(self.max_buffer_size, self.batch_size)
 
-        self.ANN_target = _actor_network(self.state_dim, self.action_dim).model()
-        self.ANN_pred = _actor_network(self.state_dim, self.action_dim).model()
-        self.QNN_target = _critic_network(self.state_dim, self.action_dim).model()
-        self.QNN_pred = _critic_network(self.state_dim, self.action_dim).model()
+        self.ANN = _actor_network(self.state_dim, self.action_dim).model()
+        self.QNN = _critic_network(self.state_dim, self.action_dim).model()
+        self.const = -math.log(math.sqrt(2*math.pi))
 
 
         #############################################
         #----Action based on exploration policy-----#
         #############################################
 
-    def forward(self, state):
-        action = self.ANN_pred(state)
-        epsilon = max(self.epsilon, 0.2)
-        if random.uniform(0.0, 1.0)>epsilon:
-            action = action[0]
-        else:
-            action = action[0] + tf.random.normal([self.action_dim], 0.0, 2*epsilon)
+    def chose_action(self, state):
+        action = self.ANN(state)[0]
+        if random.uniform(0.0, 1.0)<self.eps: action += tf.random.normal([self.action_dim], 0.0, self.eps)
         return np.clip(action, -1.0, 1.0)
 
     def update_buffer(self):
-        t_last = len(self.stack)
-        t_last_clipped = t_last - self.clip
-        if t_last>self.clip:
-            for t, (TSt,At,Rt,TSt_) in enumerate(self.stack):
-                if t<t_last_clipped:
+        active_steps = (len(self.stack) - self.clip)
+        if active_steps>0:
+            for t, (St,At,Rt,St_) in enumerate(self.stack):
+                if t<active_steps:
                     Qt = 0.0
                     discount = 1.0
                     for k in range(t, t+self.clip):
                         Rk = self.stack[k][2]
                         Qt = Qt + discount*Rk # here Q is calcualted
                         discount *= self.gamma
-                    self.record.add_experience(TSt,At,0.01*Rt,0.01*Qt,TSt_) #Rt, Qt -> closer to action space.
+                    self.record.add_experience(St,At,0.01*Rt,0.01*Qt,St_) #Rt, Qt -> closer to action space.
             self.stack = self.stack[-self.clip:]
-
 
     #############################################
     # --------------Update Networks--------------#
     #############################################
 
-    def ANN_update(self, ANN, QNN, opt, tstates_batch):
+    def ANN_update(self, ANN, QNN, opt, St, Qt):
         with tf.GradientTape(persistent=True) as tape:
-            a = ANN(tstates_batch)
-            q = -QNN([tstates_batch, a])        #minus sign makes Q increase
-            q = tf.math.abs(q)*tf.math.tanh(q)  #smothes learning, prevents convergence to local optimum, prediction errors, etc.
-        dq_dw = tape.gradient(q, ANN.trainable_variables)
-        opt.apply_gradients(zip(dq_dw, ANN.trainable_variables))
+            a = ANN(St)
+            r = QNN([St, a])
+            r = tf.math.abs(r)*tf.math.tanh(r)  #differetiable linear x: atanh
+            R = -tf.math.reduce_mean(r)
+        dR_dw = tape.gradient(R, ANN.trainable_variables)
+        opt.apply_gradients(zip(dR_dw, ANN.trainable_variables))
 
     def QNN_update(self,QNN,opt,St,At,Q):
         with tf.GradientTape() as tape:
-            e = (Q-QNN([St, At]))**2
-            atanh2 = tf.math.sqrt(e)*tf.math.tanh(e)   #secures against outliers, quadratic between ~ 0 to 1, linear after
-        de_dw = tape.gradient(atanh2, QNN.trainable_variables)
-        opt.apply_gradients(zip(de_dw, QNN.trainable_variables))
+            e = Q-QNN([St, At])
+            e = e*tf.math.tanh(e)   #differetiable abs(x): xtanh
+            L = tf.math.reduce_mean(e)
+        dL_dw = tape.gradient(L, QNN.trainable_variables)
+        opt.apply_gradients(zip(dL_dw, QNN.trainable_variables))
 
     def TD_secure(self):
-        St, At, Rt, Qt, St_ = self.record.sample_batch() #samples replay memory, contains correct Q value (Qt)
-        self.update_target(self.QNN_target, self.QNN_pred, 0.001)   #tau update critic
-        self.update_target(self.ANN_target, self.ANN_pred, 0.001)   #tau update actor
-        At_ = self.ANN_target(St_)
-        Q_ = self.QNN_target([St_, At_])
+        St, At, Rt, Qt, St_ = self.record.sample()
+        A_ = self.ANN(St_)
+        Q_ = self.QNN([St_, A_])
         Q = Rt + self.gamma*Q_
-        self.QNN_update(self.QNN_pred, self.QNN_Adagrad, St, At, 0.5*(Q+Qt)) #trains on TD (Q) and Monte-Carlo rollout (Qt)
-        self.ANN_update(self.ANN_pred, self.QNN_pred, self.ANN_Adagrad, St)
+        Q = min((1.0 - self.eps), 0.5)*Q+max(self.eps, 0.5)*Qt    # (1-eps)*Q + eps*Qt clipped by 0.5.
+        self.QNN_update(self.QNN, self.QNN_Adam, St, At, Q-0.0001*self.entropy) #trains on TD (Q) and Monte-Carlo rollout (Qt)
+        self.ANN_update(self.ANN, self.QNN, self.ANN_Adam, St, Qt)
 
-
-    def update_target(self, target, online, tow):
-        init_weights = online.get_weights()
-        update_weights = target.get_weights()
-        weights = []
-        for i in tf.range(len(init_weights)):
-            weights.append(tow * init_weights[i] + (1 - tow) * update_weights[i])
-        target.set_weights(weights)
-        return target
 
     def clear_stack(self):
         self.state_cache = []
@@ -164,23 +146,21 @@ class DDPG():
 
 
     def save(self):
-        self.ANN_target.save('./models/actor_target.h5')
-        self.ANN_pred.save('./models/actor_pred.h5')
-        self.QNN_pred.save('./models/critic_pred.h5')
-        self.QNN_target.save('./models/critic_target.h5')
+        self.ANN.save('./models/actor_pred.h5')
+        self.QNN.save('./models/critic_pred.h5')
 
 
     def epsilon_dt(self):
-        self.s_x += self.epsilon_step
-        self.epsilon = math.exp(-1.0*self.s_x)*math.cos(self.s_x)
-
+        self.eps = max(math.exp(-self.s_x), 0.1)
+        self.s_x += self.eps_step
+        self.entropy =(self.const-math.log(self.eps)-(0.00001/self.eps)**2) #0.1% entropy
 
     def train(self):
         with open('Scores.txt', 'w+') as f:
             f.write('')
-
         state_dim = len(self.env.reset())
         cnt = 1
+        st_dev = 0.0
         score_history = []
         print('ep: score, avg, | eps | record size ')
         for episode in range(self.n_episodes):
@@ -199,8 +179,7 @@ class DDPG():
 
                 for _ in range(self.T+self.clip):
                     if reward: last_reward = reward
-
-                    action = np.array(self.forward(state))
+                    action = np.array(self.chose_action(state))
                     state_next, reward, done, info = self.env.step(action)  # step returns obs+1, reward, done
                     state_next = np.array(state_next).reshape(1, self.state_dim)
 
@@ -209,17 +188,17 @@ class DDPG():
                     if done:
                         if done_cnt == 0:
                             score += reward
-                            if (abs(reward)>10*abs(last_reward)): distribute = True
+                            if (abs(reward)>10*abs(last_reward)):
+                                for _ in range(self.clip):
+                                    reward /= self.clip
+                                    self.stack.append([state, action, reward, state_next])
+                                break
 
-                        if distribute: reward /= self.clip
-
-                        if done_cnt>self.clip:
-                            break
-                        else:
-                            done_cnt += 1
+                        if done_cnt>self.clip: break
+                        done_cnt += 1
                     else:
                         score += reward
-                        self.env.render()
+                        #self.env.render()
 
                         if len(self.record.buffer)>3*self.batch_size:
                             if cnt%(1+self.explore_time//cnt)==0:  #this just makes training starting gradually
@@ -228,7 +207,7 @@ class DDPG():
                         cnt += 1
                         t += 1
 
-                        if len(self.stack)>=(20 + self.clip) and cnt%20 == 0: # replay buffer is populated each 20 steps, after steps is enough for Qt.
+                        if len(self.stack)>=(2 + self.clip) and cnt%2 == 0: # replay buffer is populated each 20 steps, after steps is enough for Qt.
                             self.update_buffer()
 
                     self.stack.append([state, action, reward, state_next])
@@ -241,11 +220,11 @@ class DDPG():
                     self.save()
 
             score_history.append(score)
-            avg_score = np.mean(score_history[-10:])
+            avg_score = np.mean(score_history[-100:])
             with open('Scores.txt', 'a+') as f:
                 f.write(str(score) + '\n')
 
-            print('%d: %f, %f, | %f | record size %d' % (episode, score, avg_score, self.epsilon, len(self.record.buffer)))
+            print('%d: %f, %f, | %f | record size %d' % (episode, score, avg_score, self.eps, len(self.record.buffer)))
 
 
 
@@ -254,7 +233,7 @@ class DDPG():
         with open('Scores.txt', 'w+') as f:
             f.write('')
 
-        self.epsilon = 0.0
+        self.eps = 0.0
         state_dim = len(self.env.reset())
         cnt = 1
         score_history = []
@@ -300,7 +279,7 @@ class DDPG():
 
             print('%d: %f, %f ' % (episode, score, avg_score))
 
-option = 4
+option = 1
 
 if option == 1:
     env = gym.make('Pendulum-v0').env
@@ -310,8 +289,8 @@ if option == 1:
     critic_learning_rate = 0.01
 elif option == 2:
     env = gym.make('LunarLanderContinuous-v2').env
-    max_time_steps = 400
-    epsilon_step = 0.01
+    max_time_steps = 200
+    epsilon_step = 0.001
     actor_learning_rate = 0.0001
     critic_learning_rate = 0.001
 elif option == 3:
@@ -321,19 +300,19 @@ elif option == 3:
     actor_learning_rate = 0.0001
     critic_learning_rate = 0.001
 elif option == 4:
-    env = gym.make('HumanoidPyBulletEnv-v0')
+    env = gym.make('HumanoidPyBulletEnv-v0').env
     max_time_steps = 200
-    epsilon_step = 0.001
+    epsilon_step = 0.0001
     actor_learning_rate = 0.0001
     critic_learning_rate = 0.001
 elif option == 5:
-    env = gym.make('HalfCheetahPyBulletEnv-v0')
+    env = gym.make('HalfCheetahPyBulletEnv-v0').env
     max_time_steps = 200
-    epsilon_step = 0.001
+    epsilon_step = 0.0001
     actor_learning_rate = 0.0001
     critic_learning_rate = 0.001
-else:
-    print("add environment")
+elif option == 6:
+    env = gym.make('MountainCarContinuous-v0').env
     max_time_steps = 200
     epsilon_step = 0.001
     actor_learning_rate = 0.0001
@@ -345,10 +324,10 @@ ddpg = DDPG(     env , # Gym environment with continous action space
                  critic=None,
                  buffer=None,
                  epsilon_step = epsilon_step,
-                 max_buffer_size =100000, # maximum transitions to be stored in buffer
-                 batch_size = 100, # batch size for training actor and critic networks
+                 max_buffer_size =1000000, # maximum transitions to be stored in buffer
+                 batch_size = 128, # batch size for training actor and critic networks
                  max_time_steps = max_time_steps,# no of time steps per epoch
-                 clip = 200, # Q is calculated till n-steps, even after termination for correctness
+                 clip = 50, # Q is calculated till n-steps, even after termination for correctness
                  discount_factor  = 0.97,
                  explore_time = 5000,
                  actor_learning_rate = actor_learning_rate,
