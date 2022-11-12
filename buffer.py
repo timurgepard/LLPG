@@ -20,7 +20,8 @@ class Record:
         self.buffer.append([state, action, reward, Q, next_state])
 
     def sample(self):
-        arr = np.array(random.sample(self.buffer, self.batch_size))
+        arr = np.array(random.sample(self.buffer, self.batch_size)+[self.buffer[indx-1] for indx in range(-4,0)])
+        #arr = np.array(random.sample(self.buffer, self.batch_size))
         states_batch = np.vstack(arr[:, 0])
         actions_batch =np.array(list(arr[:, 1]))
         rewards_batch = np.vstack(arr[:, 2])
