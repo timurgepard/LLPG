@@ -1,3 +1,5 @@
+import multiprocessing as mp
+import ctypes
 import os
 import tensorflow as tf
 import logging
@@ -114,7 +116,7 @@ class DDPG():
         with tf.GradientTape(persistent=True) as tape:
             a = ANN(St)
             r = QNN([St, a])
-            r = (2*r-rt)  #r+Advantage gradient
+            r = 2*r-rt  #r+Advantage gradient
             r = tf.math.abs(r)*tf.math.tanh(r)  #differetiable linear x: atanh
             R = -tf.math.reduce_mean(r)
         dR_dw = tape.gradient(R, ANN.trainable_variables)
@@ -201,7 +203,7 @@ class DDPG():
 
                         if len(self.record.buffer)>3*self.batch_size:
                             if cnt%(1+self.explore_time//cnt)==0:  #this just makes training starting gradually
-                                self.TD_secure()
+                                if t%4==0: self.TD_secure()
 
                         cnt += 1
                         t += 1
