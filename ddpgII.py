@@ -1,5 +1,3 @@
-import multiprocessing as mp
-import ctypes
 import os
 import tensorflow as tf
 import logging
@@ -112,10 +110,11 @@ class DDPG():
     # --------------Update Networks--------------#
     #############################################
 
-    def ANN_update(self, ANN, QNN, opt, St, Qt):
+    def ANN_update(self, ANN, QNN, opt, St, rt):
         with tf.GradientTape(persistent=True) as tape:
             a = ANN(St)
             r = QNN([St, a])
+            r = (2*r-rt)  #r+Advantage gradient
             r = tf.math.abs(r)*tf.math.tanh(r)  #differetiable linear x: atanh
             R = -tf.math.reduce_mean(r)
         dR_dw = tape.gradient(R, ANN.trainable_variables)
@@ -279,7 +278,7 @@ class DDPG():
 
             print('%d: %f, %f ' % (episode, score, avg_score))
 
-option = 1
+option = 2
 
 if option == 1:
     env = gym.make('Pendulum-v0').env
