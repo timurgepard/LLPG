@@ -124,9 +124,9 @@ class DDPG():
         self.x += self.critic_learning_rate*0.1
         if self.x<=-1.0:
             self.type = "DDPG"
-        elif -1.0<self.x<=0.0:
+        elif -2.0<self.x<=-1.0:
             self.type = "TD3"
-        elif 0.0<self.x<=1.0:
+        elif -1.0<self.x<=0.0:
             self.type = "SAC"
         elif self.x>1.0:
             self.type = "GAE"
@@ -141,7 +141,9 @@ class DDPG():
                 #At is a sample from normal dist
                 At = tf.random.normal(A.shape, 0.0, std[0])
                 #calculate log(Guassian dist)=log_prob, gauss const = log(1/sqrt(2pi))
-                log_prob = self.gauss_const-tf.math.log(std)-((A-At)/std)**2 - tf.math.reduce_sum(tf.math.log(1-tf.math.tanh(At)**2))
+                log_prob = self.gauss_const-tf.math.log(std)-((A-At)/std)**2
+                #minus Gaussian Squashing Function to compensate clipped actions from neural network
+                log_prob -= tf.math.reduce_sum(tf.math.log(1-tf.math.tanh(At)**2))
                 if self.type=="SAC":
                     Q = Q*(1-0.01*log_prob) #1% of R => log_prob entropy
                 elif self.type=="GAE":
@@ -151,9 +153,9 @@ class DDPG():
             R = -tf.math.reduce_mean(R) #for gradient increase
         dR_dW = tape.gradient(R, ANN.trainable_variables)
         opt_a.apply_gradients(zip(dR_dW, ANN.trainable_variables))
-        if self.type=="SAC" or self.type=="GAE":
-            dR_dw = tape.gradient(R, sNN.trainable_variables)
-            opt_std.apply_gradients(zip(dR_dw, sNN.trainable_variables))
+        #if self.type=="SAC" or self.type=="GAE":
+        dR_dw = tape.gradient(R, sNN.trainable_variables)
+        opt_std.apply_gradients(zip(dR_dw, sNN.trainable_variables))
 
     def QNN_update(self,QNN,opt,St,At,st,Q):
         with tf.GradientTape() as tape:
