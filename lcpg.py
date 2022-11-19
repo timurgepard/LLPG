@@ -78,7 +78,7 @@ class DDPG():
         self.ANN_Adam = Adam(self.act_learning_rate)
         self.QNN_Adam = Adam(self.critic_learning_rate)
         self.VNN_Adam = Adam(self.critic_learning_rate)
-        self.Adadelta = Adadelta(self.critic_learning_rate)
+        self.Adagrad = Adagrad(self.critic_learning_rate)
 
 
 
@@ -185,7 +185,7 @@ class DDPG():
         if self.type == "TD3" or self.type=="SAC" or self.type=="GAE":
             Q = np.abs(Q)*np.tanh(Q) #exponential linear x: atanh, to smooth prediction, TD3 alternative
         self.QNN_update(self.QNN, self.QNN_Adam, St, At, std_, Q)
-        self.ANN_update(self.ANN, self.sNN, self.QNN, self.VNN, self.ANN_Adam, self.Adadelta, St)
+        self.ANN_update(self.ANN, self.sNN, self.QNN, self.VNN, self.ANN_Adam, self.Adagrad, St)
         self.update_target()
 
     def update_target(self):
