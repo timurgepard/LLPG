@@ -122,7 +122,7 @@ class DDPG():
     def def_algorithm(self):
         self.y = 1.0-self.sigmoid(self.x)
         self.x += self.critic_learning_rate*0.1
-        if self.x<=-1.0:
+        if self.x<=-2.0:
             self.type = "DDPG"
         elif -2.0<self.x<=-1.0:
             self.type = "TD3"
