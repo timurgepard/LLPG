@@ -131,10 +131,10 @@ class DDPG():
         elif self.x>2.0:
             self.type == "GAE"
 
-    def ANN_update(self, ANN, DNN, QNN, VNN, opt_a, opt_std, St):
+    def ANN_update(self, ANN, sNN, QNN, VNN, opt_a, opt_std, St):
         with tf.GradientTape(persistent=True) as tape:
             A = ANN(St)
-            std = DNN(St)
+            std = sNN(St)
             Q = QNN([St, A, std])
             if self.type=="SAC" or "GAE": #soft
                 #At is a sample from normal dist
@@ -147,7 +147,7 @@ class DDPG():
                     V = VNN(St)
                     Q = log_prob*(Q-V) # log_prob now directs sign of gradient
             R = tf.math.abs(Q)*tf.math.tanh(Q)  #exponential linear x: atanh, to smooth gradient
-            R = -tf.math.reduce_mean(R)
+            R = -tf.math.reduce_mean(R) #for gradient increase
         dR_dW = tape.gradient(R, ANN.trainable_variables)
         opt_a.apply_gradients(zip(dR_dW, ANN.trainable_variables))
         if self.type=="SAC" or self.type=="GAE":
