@@ -144,7 +144,7 @@ class DDPG():
                     Q = Q*(1-0.01*log_prob) #1% of R => log_prob entropy
                 elif self.type=="GAE":
                     V = VNN(St)
-                    Q = log_prob*(Q-V) # log_prob now directs sign of gradient
+                    Q = Q-V # log_prob now directs sign of gradient
             R = tf.math.abs(Q)*tf.math.tanh(Q)  #exponential linear x: atanh, to smooth gradient
             R = -tf.math.reduce_mean(R)
         dR_dW = tape.gradient(R, ANN.trainable_variables)
@@ -315,19 +315,38 @@ class DDPG():
             with open('Scores.txt', 'a+') as f:
                 f.write(str(score) + '\n')
 
-option = 1
+option = 4
 
 if option == 1:
+    env = gym.make('Pendulum-v0').env
+    max_time_steps = 200
+    actor_learning_rate = 0.001
+    critic_learning_rate = 0.01
+elif option == 2:
+    env = gym.make('LunarLanderContinuous-v2').env
+    max_time_steps = 200
+    actor_learning_rate = 0.0001
+    critic_learning_rate = 0.001
+elif option == 3:
+    env = gym.make('BipedalWalker-v3').env
+    max_time_steps = 200
+    actor_learning_rate = 0.0001
+    critic_learning_rate = 0.001
+elif option == 4:
     env = gym.make('HumanoidPyBulletEnv-v0').env
     max_time_steps = 200
     actor_learning_rate = 0.0001
     critic_learning_rate = 0.001
-elif option == 2:
+elif option == 5:
     env = gym.make('HalfCheetahPyBulletEnv-v0').env
     max_time_steps = 200
     actor_learning_rate = 0.0001
     critic_learning_rate = 0.001
-
+elif option == 6:
+    env = gym.make('MountainCarContinuous-v0').env
+    max_time_steps = 200
+    actor_learning_rate = 0.0001
+    critic_learning_rate = 0.001
 
 
 ddpg = DDPG(     env , # Gym environment with continous action space
@@ -336,9 +355,9 @@ ddpg = DDPG(     env , # Gym environment with continous action space
                  buffer=None,
                  max_buffer_size =10000, # maximum transitions to be stored in buffer
                  max_tape_size = 100000,
-                 batch_size = 128, # batch size for training actor and critic networks
+                 batch_size = 64, # batch size for training actor and critic networks
                  max_time_steps = max_time_steps,# no of time steps per epoch
-                 n_steps = 50, # Q is calculated till n-steps, even after termination for correctness
+                 n_steps = 100, # Q is calculated till n-steps, even after termination for correctness
                  discount_factor  = 0.97,
                  explore_time = 5000,
                  actor_learning_rate = actor_learning_rate,
