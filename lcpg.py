@@ -121,7 +121,7 @@ class DDPG():
 
     def def_algorithm(self):
         self.y = 1.0-self.sigmoid(self.x)
-        self.x += self.critic_learning_rate*0.01
+        self.x += self.critic_learning_rate**2
         if self.x<=0:
             self.type == "DDPG"
         elif 0.0<self.x<=1.0:
@@ -289,7 +289,7 @@ class DDPG():
             with open('Scores.txt', 'a+') as f:
                 f.write(str(score) + '\n')
 
-            print('%d: %f, %f, | %f | %f | record size %d' % (episode, score, avg_score, self.y, std, len(self.record.buffer)))
+            print(self.type, '%d: %f, %f, | %f | %f | record size %d' % (episode, score, avg_score, self.y, std, len(self.record.buffer)))
 
     def test(self):
         with open('Scores.txt', 'w+') as f:
