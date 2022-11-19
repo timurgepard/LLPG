@@ -136,7 +136,7 @@ class DDPG():
             A = ANN(St)
             std = sNN(St)
             Q = QNN([St, A, std])
-            if self.type=="SAC" or "GAE": #soft
+            if self.type=="SAC" or self.type =="GAE": #soft
                 #At is a sample from normal dist
                 At = tf.random.normal(A.shape, 0.0, std[0])
                 #calculate log(Guassian dist)=log_prob, gauss const = log(1/sqrt(2pi))
