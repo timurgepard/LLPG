@@ -318,35 +318,16 @@ class DDPG():
 option = 1
 
 if option == 1:
-    env = gym.make('Pendulum-v0').env
-    max_time_steps = 200
-    actor_learning_rate = 0.001
-    critic_learning_rate = 0.01
-elif option == 2:
-    env = gym.make('LunarLanderContinuous-v2').env
-    max_time_steps = 200
-    actor_learning_rate = 0.0001
-    critic_learning_rate = 0.001
-elif option == 3:
-    env = gym.make('BipedalWalker-v3').env
-    max_time_steps = 200
-    actor_learning_rate = 0.0001
-    critic_learning_rate = 0.001
-elif option == 4:
     env = gym.make('HumanoidPyBulletEnv-v0').env
     max_time_steps = 200
     actor_learning_rate = 0.0001
     critic_learning_rate = 0.001
-elif option == 5:
+elif option == 2:
     env = gym.make('HalfCheetahPyBulletEnv-v0').env
     max_time_steps = 200
     actor_learning_rate = 0.0001
     critic_learning_rate = 0.001
-elif option == 6:
-    env = gym.make('MountainCarContinuous-v0').env
-    max_time_steps = 200
-    actor_learning_rate = 0.0001
-    critic_learning_rate = 0.001
+
 
 
 ddpg = DDPG(     env , # Gym environment with continous action space
