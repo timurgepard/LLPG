@@ -142,7 +142,7 @@ class DDPG():
                 #calculate log(Guassian dist)=log_prob, gauss const = log(1/sqrt(2pi))
                 log_prob = self.gauss_const-tf.math.log(std)-((A-At)/std)**2
                 if self.type=="SAC":
-                    Q = Q*(1-0.01*log_prob) #1% of R => log_prob entropy
+                    Q = Q*(1-0.05*log_prob) #5% of R => log_prob entropy
                 elif self.type=="GAE":
                     V = VNN(St)
                     Q = log_prob*(Q-V) # log_prob now directs sign of gradient
