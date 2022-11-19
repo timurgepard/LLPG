@@ -168,7 +168,7 @@ class DDPG():
             e = Vt-self.VNN(St)
             e = e*tf.math.tanh(e)   #differetiable abs(x): xtanh
             L = tf.math.reduce_mean(e)
-        self.record.add_priorities(idx,e)
+        #self.record.add_priorities(idx,e)
         dL_dw = tape.gradient(L, self.VNN.trainable_variables)
         self.VNN_Adam.apply_gradients(zip(dL_dw, self.VNN.trainable_variables))
 
