@@ -122,13 +122,13 @@ class DDPG():
     def def_algorithm(self):
         self.y = 1.0-self.sigmoid(self.x)
         self.x += self.critic_learning_rate*0.1
-        if self.x<=0:
+        if self.x<=-1.0:
             self.type == "DDPG"
-        elif 0.0<self.x<=1.0:
+        elif -1.0<self.x<=0.0:
             self.type == "TD3"
-        elif 1.0<self.x<=2.0:
+        elif 0.0<self.x<=1.0:
             self.type == "SAC"
-        elif self.x>2.0:
+        elif self.x>1.0:
             self.type == "GAE"
 
     def ANN_update(self, ANN, sNN, QNN, VNN, opt_a, opt_std, St):
