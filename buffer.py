@@ -42,8 +42,9 @@ class Record:
         return states_batch, actions_batch, rewards_batch, next_states_batch, st_dev_batch, done_batch
 
     def restore(self):
-        indices = random.choices(self.indexes, weights=self.priorites, k = self.batch_size)
-        arr = np.array([self.tape[indx-1] for indx in indices])
+        arr, indices = np.array(random.sample(self.buffer, self.batch_size)), []
+        #indices = random.choices(self.indexes, weights=self.priorites, k = self.batch_size)
+        #arr = np.array([self.tape[indx-1] for indx in indices])
         states_batch = np.vstack(arr[:, 0])
         return_batch = np.vstack(arr[:, 1])
         return states_batch, return_batch, indices
