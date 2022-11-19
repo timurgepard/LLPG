@@ -31,6 +31,7 @@ class DDPG():
                  buffer=None,
                  max_buffer_size =10000, # maximum transitions to be stored in buffer
                  max_tape_size = 1000000,
+                 gamma = 0.99,
                  batch_size =64, # batch size for training actor and critic networks
                  max_time_steps = 1000 ,# no of time steps per epoch
                  n_steps = 25,
@@ -60,9 +61,8 @@ class DDPG():
 
         self.x = -3.0
         self.y = 1.0
-        self.gamma = 0.97
+        self.gamma = gamma
         self.type = "DDPG"
-        self.std = 1.0
 
         observation_dim = len(env.reset())
         self.state_dim = state_dim = observation_dim
@@ -71,15 +71,16 @@ class DDPG():
         self.gamma_sum=sum([self.gamma**i for i in range(self.n_steps)])
         self.T = max_time_steps  ## Time limit for a episode
         self.stack_steps = max_time_steps
+        self.stack = []
+        self.record = Record(self.max_buffer_size, self.max_tape_size, self.batch_size)
+
 
         self.ANN_Adam = Adam(self.act_learning_rate)
         self.QNN_Adam = Adam(self.critic_learning_rate)
         self.VNN_Adam = Adam(self.critic_learning_rate)
-        self.Adagrad = Adam(self.critic_learning_rate)
+        self.Adadelta = Adadelta(self.critic_learning_rate)
 
 
-        self.stack = []
-        self.record = Record(self.max_buffer_size, self.max_tape_size, self.batch_size)
 
         self.ANN = _actor_network(self.state_dim, self.action_dim).model()
         self.sNN = _dist_network(self.state_dim).model()
@@ -120,7 +121,7 @@ class DDPG():
 
     def def_algorithm(self):
         self.y = 1.0-self.sigmoid(self.x)
-        self.x += self.critic_learning_rate**2
+        self.x += self.critic_learning_rate*0.01
         if self.x<=0:
             self.type == "DDPG"
         elif 0.0<self.x<=1.0:
@@ -144,7 +145,7 @@ class DDPG():
                     Q = Q*(1-0.01*log_prob) #1% of R => log_prob entropy
                 elif self.type=="GAE":
                     V = VNN(St)
-                    Q = Q-V # log_prob now directs sign of gradient
+                    Q = log_prob*(Q-V) # log_prob now directs sign of gradient
             R = tf.math.abs(Q)*tf.math.tanh(Q)  #exponential linear x: atanh, to smooth gradient
             R = -tf.math.reduce_mean(R)
         dR_dW = tape.gradient(R, ANN.trainable_variables)
@@ -181,7 +182,7 @@ class DDPG():
         if self.type == "TD3" or self.type=="SAC" or self.type=="GAE":
             Q = np.abs(Q)*np.tanh(Q) #exponential linear x: atanh, to smooth prediction, TD3 alternative
         self.QNN_update(self.QNN, self.QNN_Adam, St, At, std_, Q)
-        self.ANN_update(self.ANN, self.sNN, self.QNN, self.VNN, self.ANN_Adam, self.Adagrad, St)
+        self.ANN_update(self.ANN, self.sNN, self.QNN, self.VNN, self.ANN_Adam, self.Adadelta, St)
         self.update_target()
 
     def update_target(self):
@@ -222,7 +223,7 @@ class DDPG():
         state_dim = len(self.env.reset())
         self.cnt, awr = 0, 0
         score_history = []
-        print('ep: score, avg, | eps | record size ')
+        print('ep: score, avg, | y | std | record size ')
         r_mean = 1.0
 
         for episode in range(self.n_episodes):
@@ -269,7 +270,7 @@ class DDPG():
                             elif self.type=="GAE":
                                 self.TD_secure()
 
-                if len(self.stack)>=self.batch_size and t%(self.batch_size//2) == 0:
+                if len(self.stack)>=self.batch_size and t%(int(self.batch_size/2)) == 0:
                     self.update_buffer()
                     if len(self.record.tape)>self.batch_size:
                         self.VNN_update()
@@ -288,7 +289,7 @@ class DDPG():
             with open('Scores.txt', 'a+') as f:
                 f.write(str(score) + '\n')
 
-            print('%d: %f, %f, | %f | record size %d' % (episode, score, avg_score, self.y, len(self.record.buffer)))
+            print('%d: %f, %f, | %f | %f | record size %d' % (episode, score, avg_score, self.y, std, len(self.record.buffer)))
 
     def test(self):
         with open('Scores.txt', 'w+') as f:
@@ -355,6 +356,7 @@ ddpg = DDPG(     env , # Gym environment with continous action space
                  buffer=None,
                  max_buffer_size =10000, # maximum transitions to be stored in buffer
                  max_tape_size = 100000,
+                 gamma = 0.97,
                  batch_size = 64, # batch size for training actor and critic networks
                  max_time_steps = max_time_steps,# no of time steps per epoch
                  n_steps = 100, # Q is calculated till n-steps, even after termination for correctness
