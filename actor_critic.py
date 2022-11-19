@@ -31,8 +31,9 @@ class _dist_network():
 
     def model(self):
         state = Input(shape=(self.state_dim), dtype='float32')
+        x = Dense(30, activation=atanh, kernel_initializer=RU(-1/np.sqrt(self.state_dim),1/np.sqrt(self.state_dim)))(state)
         std = Dense(1, activation='sigmoid', kernel_initializer=RU(-0.003,0.003))(state)
-        return Model(inputs=state, outputs=std+0.01)
+        return Model(inputs=state, outputs=2*std+0.01)
 
 class _q_network():
     def __init__(self, state_dim, action_dim):
