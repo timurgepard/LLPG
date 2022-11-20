@@ -144,9 +144,9 @@ class DDPG():
                     log_prob = self.gauss_const-tf.math.log(std)-(tf.math.reduce_mean(A-At)/std)**2
                     log_prob -= tf.math.reduce_sum(tf.math.log(1-tf.math.tanh(At)**2))
                     if self.type=="SAC":
-                        Q = Q-0.05*np.abs(np.mean(Q))*log_prob #5% of R => log_prob entropy
+                        Q = Q+0.1*np.abs(np.mean(Q))*log_prob #10% of R => log_prob entropy
                     elif self.type=="GAE":
-                        Q = log_prob*Q # log_prob now directs sign of gradient
+                        Q = -log_prob*Q # log_prob now directs sign of gradient
             Q = tf.math.abs(Q)*tf.math.tanh(Q)  #exponential linear x: atanh, to smooth gradient
             R = -tf.math.reduce_mean(Q) #for gradient increase
         dR_dW = tape.gradient(R, ANN.trainable_variables)
@@ -359,4 +359,5 @@ ddpg = DDPG(     env_name=env, # Gym environment with continous action space
                  n_episodes = 1000000) # no of episodes to run
 
 ddpg.train()
-
+            #dist = tfd.Normal(loc=A, scale=std)
+            #At = dist.sample(A.shape)
