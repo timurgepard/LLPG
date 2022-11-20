@@ -122,7 +122,7 @@ class DDPG():
 
     def def_algorithm(self):
         self.y = max(1.0-self.sigmoid(self.x), 0.01)
-        self.x += 0.01*self.critic_learning_rate
+        self.x += self.critic_learning_rate**2
         if self.x<=-2.0:
             self.type = "DDPG"
         elif -2.0<self.x<=-1.0:
@@ -154,9 +154,9 @@ class DDPG():
             R = -tf.math.reduce_mean(R) #for gradient increase
         dR_dW = tape.gradient(R, ANN.trainable_variables)
         opt_a.apply_gradients(zip(dR_dW, ANN.trainable_variables))
-        if self.type=="SAC" or self.type=="GAE":
-            dR_dw = tape.gradient(R, sNN.trainable_variables)
-            opt_std.apply_gradients(zip(dR_dw, sNN.trainable_variables))
+        #if self.type=="SAC" or self.type=="GAE":
+        dR_dw = tape.gradient(R, sNN.trainable_variables)
+        opt_std.apply_gradients(zip(dR_dw, sNN.trainable_variables))
 
     def QNN_update(self,QNN,opt,St,At,st,Q):
         with tf.GradientTape() as tape:
@@ -320,7 +320,7 @@ class DDPG():
             with open('Scores.txt', 'a+') as f:
                 f.write(str(score) + '\n')
 
-option = 1
+option = 2
 
 if option == 1:
     env = gym.make('Pendulum-v0').env
