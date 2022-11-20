@@ -76,9 +76,10 @@ class DDPG():
 
 
         self.ANN_Adam = Adam(self.act_learning_rate)
+        self.sNN_Adadelta = Adadelta(self.act_learning_rate)
         self.QNN_Adam = Adam(self.critic_learning_rate)
         self.VNN_Adam = Adam(self.critic_learning_rate)
-        self.Adagrad = Adagrad(self.critic_learning_rate)
+
 
 
 
@@ -120,13 +121,13 @@ class DDPG():
     #############################################
 
     def def_algorithm(self):
-        self.y = 1.0-self.sigmoid(self.x)
-        self.x += self.critic_learning_rate**2
+        self.y = max(1.0-self.sigmoid(self.x), 0.01)
+        self.x += 0.01*self.critic_learning_rate
         if self.x<=-2.0:
             self.type = "DDPG"
         elif -2.0<self.x<=-1.0:
             self.type = "TD3"
-        elif -1.0<self.x<=0.0:
+        elif -1.0<self.x<=1.0:
             self.type = "SAC"
         elif self.x>1.0:
             self.type = "GAE"
@@ -153,9 +154,9 @@ class DDPG():
             R = -tf.math.reduce_mean(R) #for gradient increase
         dR_dW = tape.gradient(R, ANN.trainable_variables)
         opt_a.apply_gradients(zip(dR_dW, ANN.trainable_variables))
-        #if self.type=="SAC" or self.type=="GAE":
-        dR_dw = tape.gradient(R, sNN.trainable_variables)
-        opt_std.apply_gradients(zip(dR_dw, sNN.trainable_variables))
+        if self.type=="SAC" or self.type=="GAE":
+            dR_dw = tape.gradient(R, sNN.trainable_variables)
+            opt_std.apply_gradients(zip(dR_dw, sNN.trainable_variables))
 
     def QNN_update(self,QNN,opt,St,At,st,Q):
         with tf.GradientTape() as tape:
@@ -185,7 +186,7 @@ class DDPG():
         if self.type == "TD3" or self.type=="SAC" or self.type=="GAE":
             Q = np.abs(Q)*np.tanh(Q) #exponential linear x: atanh, to smooth prediction, TD3 alternative
         self.QNN_update(self.QNN, self.QNN_Adam, St, At, std_, Q)
-        self.ANN_update(self.ANN, self.sNN, self.QNN, self.VNN, self.ANN_Adam, self.Adagrad, St)
+        self.ANN_update(self.ANN, self.sNN, self.QNN, self.VNN, self.ANN_Adam, self.sNN_Adadelta, St)
         self.update_target()
 
     def update_target(self):
