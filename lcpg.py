@@ -25,17 +25,16 @@ def normalize(val, min, max):
 
 class DDPG():
     def __init__(self,
-                 env , # Gym environment with continous action space
+                 env_name, # Gym environment with continous action space
                  actor=None,
                  critic=None,
                  buffer=None,
                  max_buffer_size =10000, # maximum transitions to be stored in buffer
                  max_tape_size = 1000000,
-                 gamma = 0.99,
                  batch_size =64, # batch size for training actor and critic networks
                  max_time_steps = 1000 ,# no of time steps per epoch
                  n_steps = 25,
-                 discount_factor  = 0.99,
+                 gamma  = 0.99,
                  explore_time = 2000, # time steps for random actions for exploration
                  actor_learning_rate = 0.0001,
                  critic_learning_rate = 0.001,
@@ -48,23 +47,21 @@ class DDPG():
         self.max_buffer_size = max_buffer_size
         self.max_tape_size = max_tape_size
         self.batch_size = batch_size
-        self.gamma = discount_factor  ## discount factor
         self.explore_time = explore_time
         self.act_learning_rate = actor_learning_rate
         self.critic_learning_rate = critic_learning_rate
         self.n_episodes = n_episodes
-
-        self.env = env
+        self.env = gym.make(env_name).env
         self.observ_min = self.env.observation_space.low
         self.observ_max = self.env.observation_space.high
-        self.action_dim = action_dim = env.action_space.shape[0]
+        self.action_dim = action_dim = self.env.action_space.shape[0]
 
         self.x = -3.0
         self.y = 1.0
         self.gamma = gamma
         self.type = "DDPG"
 
-        observation_dim = len(env.reset())
+        observation_dim = len(self.env.reset())
         self.state_dim = state_dim = observation_dim
 
         self.n_steps = n_steps
@@ -93,7 +90,7 @@ class DDPG():
         self.QNN_t.set_weights(self.QNN.get_weights())
         self.gauss_const = math.log(1/math.sqrt(2*math.pi))
 
-
+        print("Env:", env_name)
         #############################################
         #----Action based on exploration policy-----#
         #############################################
@@ -108,12 +105,12 @@ class DDPG():
         if active_steps>0:
             for t, (St,rt) in enumerate(self.stack):
                 if t<active_steps:
-                    Qt, Ql, l = 0.0, 0.0, 0.75
+                    Qt, Ql, l = 0.0, 0.0, 0.5
+                    l_ = 1-l
                     for k in range(t, t+self.n_steps):
-                        Qt += self.gamma**k*self.stack[k][1] # here Q is calcualted
-                        #GAE is using TD Lambda Qt for incremented steps is summed with 
-                        #decaying factor l=0.75: sum[0.25*0.75^(k-1)*Qt]+0.75^k*Qt
-                        Ql += (1-l)*(l**k)*Qt if k<t+self.n_steps-1 else l**(t+self.n_steps)*Qt 
+                        i = k-t
+                        Qt += self.gamma**i*self.stack[k][1] # here Q is calcualted
+                        Ql += l_*(l**i)*Qt if i<self.n_steps-1 else l**self.n_steps*Qt #TD lambda decaying weights sum(05*05^(t-1)*Qt)+0.5^T*Qt
                     self.record.add_roll_outs(St,Ql)
         self.stack = self.stack[-self.n_steps:]
 
@@ -123,36 +120,35 @@ class DDPG():
 
     def def_algorithm(self):
         self.y = max(1.0-self.sigmoid(self.x), 0.05)
-        self.x += 0.01*self.critic_learning_rate
-        if self.x<=-2.0:
+        self.x += 0.1*self.critic_learning_rate
+        div = round(1/self.y)
+        if div<=1:
             self.type = "DDPG"
-        elif -2.0<self.x<=-1.0:
+        elif 1<div<=2:
             self.type = "TD3"
-        elif -1.0<self.x<=0.0:
+        elif 2<div<=4:
             self.type = "SAC"
-        elif self.x>0.0:
+        elif div>4:
             self.type = "GAE"
-        #print(self.x, self.type)
 
     def ANN_update(self, ANN, sNN, QNN, VNN, opt_a, opt_std, St):
         with tf.GradientTape(persistent=True) as tape:
             A = ANN(St)
             std = sNN(St)
             Q = QNN([St, A, std])
-            if self.type=="SAC" or self.type =="GAE": #soft
-                #At is a sample from normal dist
-                At = tf.random.normal(A.shape, 0.0, std)
-                #calculate log(Guassian dist)=log_prob, gauss const = log(1/sqrt(2pi))
-                log_prob = self.gauss_const-tf.math.log(std)-((A-At)/std)**2
-                #minus Gaussian Squashing Function to compensate clipped actions from neural network
-                log_prob -= tf.math.reduce_sum(tf.math.log(1-tf.math.tanh(At)**2))
-                if self.type=="SAC":
-                    Q = Q*(1-0.1*log_prob) #1% of R => log_prob entropy
-                elif self.type=="GAE":
-                    V = VNN(St)
-                    Q = log_prob*(Q-V) # log_prob now directs sign of gradient
-            R = tf.math.abs(Q)*tf.math.tanh(Q)  #exponential linear x: atanh, to smooth gradient
-            R = -tf.math.reduce_mean(R) #for gradient increase
+            if self.type!="DDPG":
+                V = VNN(St)
+                Q = 2*Q-V #(Q+(Q-V)) if Q=V then Q, else Q+A
+                if self.type=="SAC" or self.type =="GAE": #soft
+                    At = tf.random.normal(A.shape, 0.0, std)
+                    log_prob = self.gauss_const-tf.math.log(std)-(tf.math.reduce_mean(A-At)/std)**2
+                    log_prob -= tf.math.reduce_sum(tf.math.log(1-tf.math.tanh(At)**2))
+                    if self.type=="SAC":
+                        Q = Q-0.05*np.abs(np.mean(Q))*log_prob #5% of R => log_prob entropy
+                    elif self.type=="GAE":
+                        Q = log_prob*Q # log_prob now directs sign of gradient
+            Q = tf.math.abs(Q)*tf.math.tanh(Q)  #exponential linear x: atanh, to smooth gradient
+            R = -tf.math.reduce_mean(Q) #for gradient increase
         dR_dW = tape.gradient(R, ANN.trainable_variables)
         opt_a.apply_gradients(zip(dR_dW, ANN.trainable_variables))
         dR_dw = tape.gradient(R, sNN.trainable_variables)
@@ -183,8 +179,8 @@ class DDPG():
         std_ = self.sNN_t(St_)
         Q_ = self.QNN_t([St_, A_, std_])
         Q = rt + (1-d)*self.gamma*Q_
-        if self.type == "TD3" or self.type=="SAC" or self.type=="GAE":
-            Q = np.abs(Q)*np.tanh(Q) #exponential linear x: atanh, to smooth prediction, TD3 alternative
+        if self.type!="DDPG":
+            Q = np.abs(Q)*np.tanh(Q)
         self.QNN_update(self.QNN, self.QNN_Adam, St, At, std_, Q)
         self.ANN_update(self.ANN, self.sNN, self.QNN, self.VNN, self.ANN_Adam, self.sNN_Adadelta, St)
         self.update_target()
@@ -232,16 +228,17 @@ class DDPG():
 
         for episode in range(self.n_episodes):
             score = 0.0
-            state = np.array(env.reset(), dtype='float32').reshape(1, state_dim)
+            state = np.array(self.env.reset(), dtype='float32').reshape(1, state_dim)
             terminal_reward = False
             rewards = []
             for t in range(self.T):
                 #self.env.render(mode="human")
                 action, std = self.chose_action(state)
-                state_next, reward, done, info = env.step(action)  # step returns obs+1, reward, done
+                state_next, reward, done, info = self.env.step(action)  # step returns obs+1, reward, done
                 state_next = np.array(state_next).reshape(1, self.state_dim)
                 self.record.buffer.append([state, action, reward, state_next, std, done])
                 rewards.append(reward)
+                self.cnt += 1
 
                 if done or t>=(self.T-1):
                     r_max = np.max(np.abs(rewards[:-1]))
@@ -261,18 +258,10 @@ class DDPG():
                 self.stack.append([state, reward])
                 state = state_next
 
-                self.cnt += 1
                 if episode>1 and len(self.record.buffer)>self.batch_size:
                     if t%(round(1/self.y))==0:
                         if self.gradual_start(self.cnt, self.explore_time): # starts training gradualy globally
-                            if self.type=="DDPG":
-                                self.TD_secure()
-                            elif self.type=="TD3":
-                                self.TD_secure()
-                            elif self.type=="SAC":
-                                self.TD_secure()
-                            elif self.type=="GAE":
-                                self.TD_secure()
+                            self.TD_secure()
 
                 if len(self.stack)>=self.batch_size and t%(int(self.batch_size/2)) == 0:
                     self.update_buffer()
@@ -293,7 +282,7 @@ class DDPG():
             with open('Scores.txt', 'a+') as f:
                 f.write(str(score) + '\n')
 
-            print(self.type, '%d: %f, %f, | %f | %f | record size %d' % (episode, score, avg_score, self.y, std, len(self.record.buffer)))
+            print(self.type, '%d: %f, %f, | once in %d step | std %f | record %d| step %d' % (episode, score, avg_score, round(1/self.y), std, len(self.record.buffer), self.cnt))
 
     def test(self):
         with open('Scores.txt', 'w+') as f:
@@ -307,7 +296,7 @@ class DDPG():
             score = 0.0
             state = np.array(self.env.reset(), dtype='float32').reshape(1, state_dim)
             for t in range(self.T):
-                #self.env.render()
+                self.env.render()
                 action = np.array(self.chose_action(state))
                 state_next, reward, done, info = self.env.step(action)
                 state_next = np.array(state_next).reshape(1, state_dim)
@@ -320,56 +309,54 @@ class DDPG():
             with open('Scores.txt', 'a+') as f:
                 f.write(str(score) + '\n')
 
-option = 2
+option = 4
 
 if option == 1:
-    env = gym.make('Pendulum-v0').env
+    env = 'Pendulum-v0'
     max_time_steps = 200
     actor_learning_rate = 0.001
     critic_learning_rate = 0.01
 elif option == 2:
-    env = gym.make('LunarLanderContinuous-v2').env
+    env = 'LunarLanderContinuous-v2'
     max_time_steps = 200
     actor_learning_rate = 0.0001
     critic_learning_rate = 0.001
 elif option == 3:
-    env = gym.make('BipedalWalker-v3').env
+    env = 'BipedalWalker-v3'
     max_time_steps = 200
     actor_learning_rate = 0.0001
     critic_learning_rate = 0.001
 elif option == 4:
-    env = gym.make('HumanoidPyBulletEnv-v0').env
+    env = 'HumanoidPyBulletEnv-v0'
     max_time_steps = 200
     actor_learning_rate = 0.0001
     critic_learning_rate = 0.001
 elif option == 5:
-    env = gym.make('HalfCheetahPyBulletEnv-v0').env
+    env = 'HalfCheetahPyBulletEnv-v0'
     max_time_steps = 200
-    actor_learning_rate = 0.0001
-    critic_learning_rate = 0.001
+    actor_learning_rate = 0.00001
+    critic_learning_rate = 0.0001
 elif option == 6:
-    env = gym.make('MountainCarContinuous-v0').env
+    env = 'MountainCarContinuous-v0'
     max_time_steps = 200
     actor_learning_rate = 0.0001
     critic_learning_rate = 0.001
 
 
-ddpg = DDPG(     env , # Gym environment with continous action space
+ddpg = DDPG(     env_name=env, # Gym environment with continous action space
                  actor=None,
                  critic=None,
                  buffer=None,
                  max_buffer_size =10000, # maximum transitions to be stored in buffer
                  max_tape_size = 1000000,
-                 gamma = 0.97,
                  batch_size = 64, # batch size for training actor and critic networks
                  max_time_steps = max_time_steps,# no of time steps per epoch
                  n_steps = 50, # Q is calculated till n-steps, even after termination for correctness
-                 discount_factor  = 0.97,
-                 explore_time = 5000,
+                 gamma  = 0.99,
+                 explore_time = 10000,
                  actor_learning_rate = actor_learning_rate,
                  critic_learning_rate = critic_learning_rate,
                  n_episodes = 1000000) # no of episodes to run
 
 ddpg.train()
-            #dist = tfd.Normal(loc=A, scale=std)
-            #At = dist.sample(A.shape)
+
