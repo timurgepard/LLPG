@@ -121,7 +121,7 @@ class DDPG():
 
     def def_algorithm(self):
         self.y = 1.0-self.sigmoid(self.x)
-        self.x += self.critic_learning_rate*0.1
+        self.x += self.critic_learning_rate**2
         if self.x<=-2.0:
             self.type = "DDPG"
         elif -2.0<self.x<=-1.0:
@@ -139,7 +139,7 @@ class DDPG():
             Q = QNN([St, A, std])
             if self.type=="SAC" or self.type =="GAE": #soft
                 #At is a sample from normal dist
-                At = tf.random.normal(A.shape, 0.0, std[0])
+                At = tf.random.normal(A.shape, 0.0, std)
                 #calculate log(Guassian dist)=log_prob, gauss const = log(1/sqrt(2pi))
                 log_prob = self.gauss_const-tf.math.log(std)-((A-At)/std)**2
                 #minus Gaussian Squashing Function to compensate clipped actions from neural network
@@ -319,7 +319,7 @@ class DDPG():
             with open('Scores.txt', 'a+') as f:
                 f.write(str(score) + '\n')
 
-option = 4
+option = 1
 
 if option == 1:
     env = gym.make('Pendulum-v0').env
