@@ -81,8 +81,6 @@ class DDPG():
         self.VNN_Adam = Adam(self.critic_learning_rate)
 
 
-
-
         self.ANN = _actor_network(self.state_dim, self.action_dim).model()
         self.sNN = _dist_network(self.state_dim).model()
         self.QNN = _q_network(self.state_dim, self.action_dim).model()
@@ -110,10 +108,13 @@ class DDPG():
         if active_steps>0:
             for t, (St,rt) in enumerate(self.stack):
                 if t<active_steps:
-                    Qt = 0.0
+                    Qt, Ql, l = 0.0, 0.0, 0.75
                     for k in range(t, t+self.n_steps):
                         Qt += self.gamma**k*self.stack[k][1] # here Q is calcualted
-                    self.record.add_roll_outs(St,Qt)
+                        #GAE is using TD Lambda Qt for incremented steps is summed with 
+                        #decaying factor l=0.75: sum[0.25*0.75^(k-1)*Qt]+0.75^k*Qt
+                        Ql += (1-l)*(l**k)*Qt if k<t+self.n_steps-1 else l**(t+self.n_steps)*Qt 
+                    self.record.add_roll_outs(St,Ql)
         self.stack = self.stack[-self.n_steps:]
 
     #############################################
@@ -121,15 +122,15 @@ class DDPG():
     #############################################
 
     def def_algorithm(self):
-        self.y = max(1.0-self.sigmoid(self.x), 0.01)
+        self.y = max(1.0-self.sigmoid(self.x), 0.05)
         self.x += 0.01*self.critic_learning_rate
         if self.x<=-2.0:
             self.type = "DDPG"
         elif -2.0<self.x<=-1.0:
             self.type = "TD3"
-        elif -1.0<self.x<=1.0:
+        elif -1.0<self.x<=0.0:
             self.type = "SAC"
-        elif self.x>1.0:
+        elif self.x>0.0:
             self.type = "GAE"
         #print(self.x, self.type)
 
@@ -146,7 +147,7 @@ class DDPG():
                 #minus Gaussian Squashing Function to compensate clipped actions from neural network
                 log_prob -= tf.math.reduce_sum(tf.math.log(1-tf.math.tanh(At)**2))
                 if self.type=="SAC":
-                    Q = Q*(1-0.01*log_prob) #1% of R => log_prob entropy
+                    Q = Q*(1-0.1*log_prob) #1% of R => log_prob entropy
                 elif self.type=="GAE":
                     V = VNN(St)
                     Q = log_prob*(Q-V) # log_prob now directs sign of gradient
@@ -154,7 +155,6 @@ class DDPG():
             R = -tf.math.reduce_mean(R) #for gradient increase
         dR_dW = tape.gradient(R, ANN.trainable_variables)
         opt_a.apply_gradients(zip(dR_dW, ANN.trainable_variables))
-        #if self.type=="SAC" or self.type=="GAE":
         dR_dw = tape.gradient(R, sNN.trainable_variables)
         opt_std.apply_gradients(zip(dR_dw, sNN.trainable_variables))
 
