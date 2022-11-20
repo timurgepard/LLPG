@@ -9,7 +9,7 @@ import pickle
 import numpy as np
 import os
 os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
-from buffer import Record
+from buffer import Replay
 from actor_critic import _actor_network,_q_network, _v_network, _dist_network
 import math
 from collections import deque
@@ -30,7 +30,7 @@ class DDPG():
                  critic=None,
                  buffer=None,
                  max_buffer_size =10000, # maximum transitions to be stored in buffer
-                 max_tape_size = 1000000,
+                 max_record_size = 1000000,
                  batch_size =64, # batch size for training actor and critic networks
                  max_time_steps = 1000 ,# no of time steps per epoch
                  n_steps = 25,
@@ -45,7 +45,7 @@ class DDPG():
         # --------------- Parametres-----------------#
         #############################################
         self.max_buffer_size = max_buffer_size
-        self.max_tape_size = max_tape_size
+        self.max_record_size = max_record_size
         self.batch_size = batch_size
         self.explore_time = explore_time
         self.act_learning_rate = actor_learning_rate
@@ -69,7 +69,7 @@ class DDPG():
         self.T = max_time_steps  ## Time limit for a episode
         self.stack_steps = max_time_steps
         self.stack = []
-        self.record = Record(self.max_buffer_size, self.max_tape_size, self.batch_size)
+        self.replay = Replay(self.max_buffer_size, self.max_record_size, self.batch_size)
 
 
         self.ANN_Adam = Adam(self.act_learning_rate)
@@ -111,7 +111,7 @@ class DDPG():
                         i = k-t
                         Qt += self.gamma**i*self.stack[k][1] # here Q is calcualted
                         Ql += l_*(l**i)*Qt if i<self.n_steps-1 else l**self.n_steps*Qt #TD lambda decaying weights sum(05*05^(t-1)*Qt)+0.5^T*Qt
-                    self.record.add_roll_outs(St,Ql)
+                    self.replay.add_roll_outs(St,Ql)
         self.stack = self.stack[-self.n_steps:]
 
     #############################################
@@ -126,9 +126,9 @@ class DDPG():
             self.type = "DDPG"
         elif 1<div<=2:
             self.type = "TD3"
-        elif 2<div<=5:
+        elif 2<div<=10:
             self.type = "SAC"
-        elif div>5:
+        elif div>10:
             self.type = "GAE"
 
     def ANN_update(self, ANN, sNN, QNN, VNN, opt_a, opt_std, St):
@@ -162,18 +162,18 @@ class DDPG():
         opt.apply_gradients(zip(dL_dw, QNN.trainable_variables))
 
     def VNN_update(self):
-        St, Vt, idx = self.record.restore()
+        St, Vt, idx = self.replay.restore()
         with tf.GradientTape() as tape:
             e = Vt-self.VNN(St)
             e = e*tf.math.tanh(e)   #differetiable abs(x): xtanh
             L = tf.math.reduce_mean(e)
-        #self.record.add_priorities(idx,e)
+        #self.replay.add_priorities(idx,e)
         dL_dw = tape.gradient(L, self.VNN.trainable_variables)
         self.VNN_Adam.apply_gradients(zip(dL_dw, self.VNN.trainable_variables))
 
     def TD_secure(self):
         self.def_algorithm()
-        St, At, rt, St_, st, d = self.record.sample()
+        St, At, rt, St_, st, d = self.replay.sample()
         A_ = self.ANN_t(St_)
         std_ = self.sNN_t(St_)
         Q_ = self.QNN_t([St_, A_, std_])
@@ -235,7 +235,7 @@ class DDPG():
                 action, std = self.chose_action(state)
                 state_next, reward, done, info = self.env.step(action)  # step returns obs+1, reward, done
                 state_next = np.array(state_next).reshape(1, self.state_dim)
-                self.record.buffer.append([state, action, reward, state_next, std, done])
+                self.replay.buffer.append([state, action, reward, state_next, std, done])
                 rewards.append(reward)
                 self.cnt += 1
 
@@ -257,18 +257,18 @@ class DDPG():
                 self.stack.append([state, reward])
                 state = state_next
 
-                if episode>1 and len(self.record.buffer)>self.batch_size:
+                if episode>1 and len(self.replay.buffer)>self.batch_size:
                     if t%(round(1/self.y))==0:
                         if self.gradual_start(self.cnt, self.explore_time): # starts training gradualy globally
                             self.TD_secure()
 
                 if len(self.stack)>=self.batch_size and t%(int(self.batch_size/2)) == 0:
                     self.update_buffer()
-                    if len(self.record.tape)>self.batch_size:
+                    if len(self.replay.record)>self.batch_size:
                         self.VNN_update()
 
             self.update_buffer()
-            if len(self.record.tape)>self.batch_size:
+            if len(self.replay.record)>self.batch_size:
                 self.VNN_update()
             self.stack = []
 
@@ -281,7 +281,7 @@ class DDPG():
             with open('Scores.txt', 'a+') as f:
                 f.write(str(score) + '\n')
 
-            print(self.type, '%d: %f, %f, | once in %d step | std %f | record %d| step %d' % (episode, score, avg_score, round(1/self.y), std, len(self.record.buffer), self.cnt))
+            print(self.type, '%d: %f, %f, | once in %d step | std %f | buffer %d| record/step %d' % (episode, score, avg_score, round(1/self.y), std, len(self.replay.buffer), self.cnt))
 
     def test(self):
         with open('Scores.txt', 'w+') as f:
@@ -347,7 +347,7 @@ ddpg = DDPG(     env_name=env, # Gym environment with continous action space
                  critic=None,
                  buffer=None,
                  max_buffer_size =10000, # maximum transitions to be stored in buffer
-                 max_tape_size = 1000000,
+                 max_record_size = 1000000,
                  batch_size = 64, # batch size for training actor and critic networks
                  max_time_steps = max_time_steps,# no of time steps per epoch
                  n_steps = 50, # Q is calculated till n-steps, even after termination for correctness
