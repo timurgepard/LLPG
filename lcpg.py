@@ -138,13 +138,17 @@ class DDPG():
             Q = QNN([St, A, std])
             if self.type!="DDPG":
                 V = VNN(St)
-                Q = 2*Q-V #(Q+(Q-V)) if Q=V then Q, else Q+A
+                if self.type=="GAE":
+                    Q = Q-V # A
+                else:
+                    Q = 2*Q-V #(Q+(Q-V)) if Q=V then Q, else Q+A
                 if self.type=="SAC" or self.type =="GAE": #soft
                     At = tf.random.normal(A.shape, 0.0, std)
                     log_prob = self.gauss_const-tf.math.log(std)-(tf.math.reduce_mean(A-At)/std)**2
                     log_prob -= tf.math.reduce_sum(tf.math.log(1-tf.math.tanh(At)**2))
                     Q = Q+0.1*np.abs(np.mean(Q))*log_prob #10% of R => log_prob entropy
                     if self.type=="GAE":
+                        #V = V+0.1*np.abs(np.mean(V))*log_prob
                         Q = log_prob*Q # log_prob now directs sign of gradient
             Q = tf.math.abs(Q)*tf.math.tanh(Q)  #exponential linear x: atanh, to smooth gradient
             R = -tf.math.reduce_mean(Q) #for gradient increase
