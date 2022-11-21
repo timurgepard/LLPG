@@ -126,9 +126,9 @@ class DDPG():
             self.type = "DDPG"
         elif 1<div<=2:
             self.type = "TD3"
-        elif 2<div<=10:
+        elif 2<div<=4:
             self.type = "SAC"
-        elif div>10:
+        elif div>4:
             self.type = "GAE"
 
     def ANN_update(self, ANN, sNN, QNN, VNN, opt_a, opt_std, St):
