@@ -126,10 +126,10 @@ class DDPG():
             A = ANN(St)
             tape.watch(A)
             Q = QNN([St,A])
-        dQ_dA = tape.gradient(Q, A) #first take gradient of dQ/dA
-        dQ_dA = tf.math.abs(dQ_dA)*tf.math.tanh(dQ_dA) #then smooth it
-
-        dA_dW = tape.gradient(A, ANN.trainable_variables, output_gradients=-dQ_dA) #then apply to action network
+            R = tf.math.reduce_mean(Q)
+        dR_dA = tape.gradient(R, A) #first take gradient of dR/dA
+        dR_dA = tf.math.abs(dR_dA)*tf.math.tanh(dR_dA) #then smooth it
+        dA_dW = tape.gradient(A, ANN.trainable_variables, output_gradients=-dR_dA) #then apply to action network
         opt_a.apply_gradients(zip(dA_dW, ANN.trainable_variables))
 
 
