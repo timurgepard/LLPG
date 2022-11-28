@@ -10,7 +10,7 @@ import numpy as np
 import os
 os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 from buffer import Replay
-from actor_critic import _actor_network,_q_network, _v_network, _dist_network, _env_network
+from actor_critic import _actor_network,_q_network
 import math
 from collections import deque
 
