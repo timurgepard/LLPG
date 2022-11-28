@@ -128,10 +128,10 @@ class DDPG():
             A = ANN(St)
             tape.watch(A)
             Q = QNN([St,A])
-            R = tf.math.reduce_mean(Q)
-        dR_dA = tape.gradient(R, A) #first take gradient of dQ/dA
-        dR_dA = tf.math.abs(dR_dA)*tf.math.tanh(dR_dA) #then smooth it
-        dA_dW = tape.gradient(A, ANN.trainable_variables, output_gradients=-dR_dA) #then apply to action network
+            Q = tf.math.reduce_mean(Q)
+        dQ_dA = tape.gradient(Q, A) #first take gradient of dQ/dA
+        dQ_dA = tf.math.abs(dQ_dA)*tf.math.tanh(dQ_dA) #then smooth it
+        dA_dW = tape.gradient(A, ANN.trainable_variables, output_gradients=-dQ_dA) #then apply to action network
         opt_a.apply_gradients(zip(dA_dW, ANN.trainable_variables))
 
 
@@ -149,6 +149,8 @@ class DDPG():
         An_ = self.ANN_t(Stn_)
         Qn_ = self.QNN_t([Stn_, An_])
         Q = Qt + (1-Tn)*self.gamma**self.n_step*Qn_
+        Q += 0.01*tf.math.log(self.eps)/self.norm
+
         self.NN_update(self.QNN, self.QNN_Adam, [St, At], Q)
         self.ANN_update(self.ANN, self.QNN, self.ANN_Adam, St)
         self.update_target()
@@ -230,8 +232,8 @@ class DDPG():
                 if len(self.replay.cache)>=self.n_steps and self.cnt%(self.n_steps/2) == 0: # replay buffer is populated each 20 steps, after steps is enough for Qt.
                     self.update_buffer()
 
-
-                if len(self.replay.record)>self.batch_size:
+                self.cnt += 1
+                if len(self.replay.record)>self.batch_size and self.cnt>int(self.explore_time/2):
                     if self.cnt%self.n_step==0:
                         if self.gradual_start(self.cnt, self.explore_time): # starts training gradualy globally
                             if self.gradual_start(t, self.n_steps): # starts training gradually within episode
