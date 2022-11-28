@@ -207,7 +207,7 @@ class DDPG():
                 state_next, reward, done, info = self.env.step(action)  # step returns obs+1, reward, done
                 state_next = np.array(state_next).reshape(1, self.state_dim)
                 rewards.append(reward)
-
+                self.cnt += 1
                 if done or t>=(self.T-1):
                     r_max = np.max(np.abs(rewards[:-1]))
                     if abs(reward)>10*r_max: T = True
@@ -232,7 +232,7 @@ class DDPG():
                 if len(self.replay.cache)>=self.n_steps and self.cnt%(self.n_steps/2) == 0: # replay buffer is populated each 20 steps, after steps is enough for Qt.
                     self.update_buffer()
 
-                self.cnt += 1
+
                 if len(self.replay.record)>self.batch_size and self.cnt>int(self.explore_time/2):
                     if self.cnt%self.n_step==0:
                         if self.gradual_start(self.cnt, self.explore_time): # starts training gradualy globally
