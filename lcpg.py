@@ -115,7 +115,7 @@ class DDPG():
     def eps_step(self):
         self.eps =  (1.0-self.sigmoid(self.x))
         self.n_step = round(1/self.eps)
-        if self.n_step<self.batch_size/4:
+        if self.n_step<self.batch_size:
             self.x += self.act_learning_rate
         self.tr += 1
 
