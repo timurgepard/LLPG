@@ -29,6 +29,7 @@ class DDPG():
                  actor=None,
                  critic=None,
                  buffer=None,
+                 stop_n_step=64,
                  normalize_Q_by = 1,
                  max_buffer_size =10000, # maximum transitions to be stored in buffer
                  cross_fire=True,
@@ -61,6 +62,7 @@ class DDPG():
         self.eps = 1.0
         self.gamma = gamma
         self.norm = normalize_Q_by
+        self.stop_n_step = stop_n_step
 
         observation_dim = len(self.env.reset())
         self.state_dim = state_dim = observation_dim
@@ -115,7 +117,7 @@ class DDPG():
     def eps_step(self):
         self.eps =  (1.0-self.sigmoid(self.x))
         self.n_step = round(1/self.eps)
-        if self.n_step<self.batch_size/4:
+        if self.n_step<self.stop_n_step:
             self.x += self.act_learning_rate
         self.tr += 1
 
@@ -196,7 +198,7 @@ class DDPG():
             done, T = False, False
             rewards = []
             for t in range(self.T):
-                self.env.render(mode="human")
+                #self.env.render(mode="human")
                 action = self.chose_action(state)
                 state_next, reward, done, info = self.env.step(action)  # step returns obs+1, reward, done
                 state_next = np.array(state_next).reshape(1, self.state_dim)
@@ -312,7 +314,8 @@ ddpg = DDPG(     env_name=env, # Gym environment with continous action space
                  actor=None,
                  critic=None,
                  buffer=None,
-                 normalize_Q_by = 10, #1 no normalization, 10-1000 possible values
+                 stop_n_step = 16,
+                 normalize_Q_by = 1, #1 no normalization, 10-1000 possible values
                  max_buffer_size =10000, # maximum transitions to be stored in buffer
                  batch_size = 64, # batch size for training actor and critic networks
                  max_time_steps = max_time_steps,# no of time steps per epoch
