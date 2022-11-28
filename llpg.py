@@ -96,8 +96,8 @@ class DDPG():
 
     def chose_action(self, state):
         action = self.ANN(state)[0]
-        if random.uniform(0.0,1.0)<self.eps:
-            action += tf.random.normal([self.action_dim], 0.0, self.eps+0.2)
+        #if random.uniform(0.0,1.0)<self.eps:
+        action += tf.random.normal([self.action_dim], 0.0, self.eps)
         return np.clip(action, -1.0, 1.0)
 
     def update_buffer(self):
@@ -120,8 +120,8 @@ class DDPG():
 
     def eps_step(self):
         self.eps =  (1.0-self.sigmoid(self.x))
-        self.train_step = round(1/self.eps)
-        self.n_step = 2*self.train_step
+        self.train_step = 4*round(1/self.eps)
+        self.n_step = self.train_step
 
         if self.n_step<self.n_steps:
             self.x += self.act_learning_rate
@@ -207,7 +207,7 @@ class DDPG():
             done, T = False, False
             rewards = []
             for t in range(self.T):
-                self.env.render(mode="human")
+                #self.env.render(mode="human")
                 action = self.chose_action(state)
                 state_next, reward, done, info = self.env.step(action)  # step returns obs+1, reward, done
                 state_next = np.array(state_next).reshape(1, self.state_dim)
@@ -281,11 +281,11 @@ class DDPG():
                 if done: break
             score = sum(rewards)
             score_history.append(score)
-            avg_score = np.mean(score_history[-100:])
+            avg_score = np.mean(score_history[-10:])
             with open('Scores.txt', 'a+') as f:
                 f.write(str(score) + '\n')
 
-option = 1
+option = 2
 
 if option == 1:
     env = 'Pendulum-v0'
@@ -323,7 +323,7 @@ ddpg = DDPG(     env_name=env, # Gym environment with continous action space
                  actor=None,
                  critic=None,
                  buffer=None,
-                 n_steps = 32,
+                 n_steps = 64,
                  normalize_Q_by = 1, #1 no normalization, 10-1000 possible values
                  max_buffer_size =100000, # maximum transitions to be stored in buffer
                  batch_size = 64, # batch size for training actor and critic networks
