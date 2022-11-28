@@ -115,8 +115,8 @@ class DDPG():
     def eps_step(self):
         self.eps =  (1.0-self.sigmoid(self.x))
         self.n_step = round(1/self.eps)
-        #if self.n_step<self.batch_size/4:
-        self.x += self.act_learning_rate
+        if self.n_step<self.batch_size/4:
+            self.x += self.act_learning_rate
         self.tr += 1
 
     def ANN_update(self, ANN, QNN, opt_a, St):
@@ -196,7 +196,7 @@ class DDPG():
             done, T = False, False
             rewards = []
             for t in range(self.T):
-                #self.env.render(mode="human")
+                self.env.render(mode="human")
                 action = self.chose_action(state)
                 state_next, reward, done, info = self.env.step(action)  # step returns obs+1, reward, done
                 state_next = np.array(state_next).reshape(1, self.state_dim)
