@@ -29,7 +29,7 @@ class DDPG():
                  actor=None,
                  critic=None,
                  buffer=None,
-                 stop_n_step=64,
+                 n_steps=64,
                  normalize_Q_by = 1,
                  max_buffer_size =10000, # maximum transitions to be stored in buffer
                  cross_fire=True,
@@ -62,13 +62,12 @@ class DDPG():
         self.eps = 1.0
         self.gamma = gamma
         self.norm = normalize_Q_by
-        self.stop_n_step = stop_n_step
+        self.n_steps = n_steps
 
         observation_dim = len(self.env.reset())
         self.state_dim = state_dim = observation_dim
 
         self.n_step = 4
-        self.n_steps = batch_size
         self.T = max_time_steps  ## Time limit for a episode
         self.replay = Replay(self.max_buffer_size, self.max_record_size, self.batch_size)
 
@@ -86,7 +85,7 @@ class DDPG():
         self.QNN_t.set_weights(self.QNN.get_weights())
 
         self.tr = 0
-        self.train_step = 2
+        self.n_step = 4
 
         print("Env:", env_name)
         #############################################
@@ -95,7 +94,9 @@ class DDPG():
 
 
     def chose_action(self, state):
-        action = self.ANN(state)[0] + tf.random.normal([self.action_dim], 0.0, self.eps+0.2)
+        action = self.ANN(state)[0]
+        if random.uniform(0.0,1.0)<self.eps:
+            action += tf.random.normal([self.action_dim], 0.0, self.eps+0.2)
         return np.clip(action, -1.0, 1.0)
 
     def update_buffer(self):
@@ -118,9 +119,9 @@ class DDPG():
 
     def eps_step(self):
         self.eps =  (1.0-self.sigmoid(self.x))
-        self.n_step = 4*round(1/self.eps)
-        self.train_step = int(self.n_step/2)
-        if self.n_step<self.stop_n_step:
+        self.n_step = 2*round(1/self.eps)
+
+        if self.n_step<self.n_steps:
             self.x += self.act_learning_rate
         self.tr += 1
 
@@ -231,12 +232,12 @@ class DDPG():
                     break
                 self.replay.add_transition([state, action, reward/self.norm, state_next, T])
                 state = state_next
-                if len(self.replay.cache)>=self.n_steps and self.cnt%(self.n_steps/2) == 0: # replay buffer is populated each 20 steps, after steps is enough for Qt.
+                if len(self.replay.cache)>=self.n_steps and self.cnt%self.n_step == 0: # replay buffer is populated each n steps, after steps is enough for Qt.
                     self.update_buffer()
 
 
                 if len(self.replay.record)>self.batch_size:
-                    if self.cnt%(self.train_step)==0:
+                    if self.cnt%(self.n_step)==0:
                         if self.gradual_start(self.cnt, self.explore_time): # starts training gradualy globally
                             if self.gradual_start(t, self.n_steps): # starts training gradually within episode
                                 self.eps_step()
@@ -255,7 +256,7 @@ class DDPG():
             with open('Scores.txt', 'a+') as f:
                 f.write(str(score) + '\n')
 
-            print('%d: %f, %f, | once in %d steps, Q for %d, eps %f| record %d| step %d| tr step %d' % (episode, score, avg_score, self.train_step, self.n_step, self.eps, len(self.replay.record), self.cnt, self.tr))
+            print('%d: %f, %f, | once in %d steps, Q for %d, eps %f| record %d| step %d| tr step %d' % (episode, score, avg_score, self.n_step, self.n_step, self.eps, len(self.replay.record), self.cnt, self.tr))
 
     def test(self):
         with open('Scores.txt', 'w+') as f:
@@ -320,7 +321,7 @@ ddpg = DDPG(     env_name=env, # Gym environment with continous action space
                  actor=None,
                  critic=None,
                  buffer=None,
-                 stop_n_step = 64,
+                 n_steps = 32,
                  normalize_Q_by = 1, #1 no normalization, 10-1000 possible values
                  max_buffer_size =100000, # maximum transitions to be stored in buffer
                  batch_size = 64, # batch size for training actor and critic networks
