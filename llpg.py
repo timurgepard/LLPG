@@ -68,6 +68,7 @@ class DDPG():
         self.state_dim = state_dim = observation_dim
 
         self.n_step = 4
+        self.train_step = 1
         self.T = max_time_steps  ## Time limit for a episode
         self.replay = Replay(self.max_buffer_size, self.max_record_size, self.batch_size)
 
@@ -119,7 +120,8 @@ class DDPG():
 
     def eps_step(self):
         self.eps =  (1.0-self.sigmoid(self.x))
-        self.n_step = 2*round(1/self.eps)
+        self.n_step = 4*round(1/self.eps)
+        self.train_step = self.n_step/4
 
         if self.n_step<self.n_steps:
             self.x += self.act_learning_rate
@@ -237,7 +239,7 @@ class DDPG():
 
 
                 if len(self.replay.record)>self.batch_size:
-                    if self.cnt%(self.n_step)==0:
+                    if self.cnt%(self.train_step)==0:
                         if self.gradual_start(self.cnt, self.explore_time): # starts training gradualy globally
                             if self.gradual_start(t, self.n_steps): # starts training gradually within episode
                                 self.eps_step()
@@ -256,7 +258,7 @@ class DDPG():
             with open('Scores.txt', 'a+') as f:
                 f.write(str(score) + '\n')
 
-            print('%d: %f, %f, | once in %d steps, Q for %d, eps %f| record %d| step %d| tr step %d' % (episode, score, avg_score, self.n_step, self.n_step, self.eps, len(self.replay.record), self.cnt, self.tr))
+            print('%d: %f, %f, | once in %d steps, Q for %d, eps %f| record %d| step %d| tr step %d' % (episode, score, avg_score, self.train_step, self.n_step, self.eps, len(self.replay.record), self.cnt, self.tr))
 
     def test(self):
         with open('Scores.txt', 'w+') as f:
