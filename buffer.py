@@ -27,11 +27,10 @@ class Replay:
         self.record.append(roll_out)
 
     def restore(self, n_step, gamma):
-        #combined exp replay: add last n steps to batch: Exp Replay < Combined Exp Replay < Prioritized Exp Replay
+        #combined exp replay: add last n steps to batch:
         #cer = random.sample(self.record, self.batch_size-n_step)+[self.record[indx-1] for indx in range(-n_step,0)]
-        er = random.sample(self.record, self.batch_size)
         #roll-outs are retrieved here
-        arr = np.array(er)
+        arr = np.array(random.sample(self.record, self.batch_size))
         Sts =  np.vstack(arr[:, 0, :])
         Ats = np.vstack(arr[:, 1, :])
         rts = np.vstack(arr[:, 2, :])
