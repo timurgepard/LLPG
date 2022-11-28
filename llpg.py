@@ -147,16 +147,14 @@ class DDPG():
         Qn_ = self.QNN_t([Stn_, An_])
         Q = Qt + (1-Tn)*self.gamma**self.n_step*Qn_
 
-
         self.NN_update(self.QNN, self.QNN_Adam, [St, At], Q)
-        # update ANN
         self.ANN_update(self.ANN, self.QNN, self.ANN_Adam, St)
         self.update_target()
 
 
     def update_target(self):
-        self.tow_update(self.ANN_t, self.ANN, 0.001)
-        self.tow_update(self.QNN_t, self.QNN, 0.001)
+        self.tow_update(self.ANN_t, self.ANN, 0.1)
+        self.tow_update(self.QNN_t, self.QNN, 0.1)
 
 
     def tow_update(self, target, online, tow):
