@@ -19,10 +19,11 @@ class _actor_network():
 
     def model(self):
         state = Input(shape=(self.state_dim), dtype='float64')
-        x = Dense(40, activation=atanh, kernel_initializer=RU(-1/np.sqrt(self.state_dim),1/np.sqrt(self.state_dim)))(state)
-        x = Dense(30, activation=atanh, kernel_initializer=RU(-1/np.sqrt(40),1/np.sqrt(40)))(x)
+        x = Dense(400, activation='relu', kernel_initializer=RU(-1/np.sqrt(self.state_dim),1/np.sqrt(self.state_dim)))(state)
+        x = Dense(300, activation='relu', kernel_initializer=RU(-1/np.sqrt(40),1/np.sqrt(40)))(x)
         out = Dense(self.action_dim, activation='tanh', kernel_initializer=RU(-0.003,0.003))(x)
         return Model(inputs=state, outputs=out)
+
 
 class _q_network():
     def __init__(self, state_dim, action_dim):
@@ -31,9 +32,9 @@ class _q_network():
 
     def model(self):
         state = Input(shape=self.state_dim, name='state_input', dtype='float64')
-        state_i = Dense(40, activation=atanh, kernel_initializer=RU(-1/np.sqrt(self.state_dim),1/np.sqrt(self.state_dim)))(state)
+        state_i = Dense(400, activation='relu', kernel_initializer=RU(-1/np.sqrt(self.state_dim),1/np.sqrt(self.state_dim)))(state)
         action = Input(shape=(self.action_dim,), name='action_input', dtype='float64')
         x = concatenate([state_i, action])
-        x = Dense(30, activation=atanh, kernel_initializer=RU(-1/np.sqrt(40),1/np.sqrt(40)))(x)
+        x = Dense(300, activation='relu', kernel_initializer=RU(-1/np.sqrt(40),1/np.sqrt(40)))(x)
         out = Dense(1, activation='linear', kernel_initializer=RU(-0.003,0.003))(x)
         return Model(inputs=[state, action], outputs=out)
