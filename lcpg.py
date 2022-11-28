@@ -115,7 +115,7 @@ class DDPG():
     def eps_step(self):
         self.eps =  (1.0-self.sigmoid(self.x))
         self.n_step = round(1/self.eps)
-        if self.n_step<self.batch_size/2:
+        if self.n_step<self.batch_size/4:
             self.x += self.act_learning_rate
         self.tr += 1
 
@@ -144,6 +144,7 @@ class DDPG():
         An_ = self.ANN_t(Stn_)
         Qn_ = self.QNN_t([Stn_, An_])
         Q = Qt + (1-Tn)*self.gamma**self.n_step*Qn_
+
 
         self.NN_update(self.QNN, self.QNN_Adam, [St, At], Q)
         # update ANN
@@ -311,7 +312,7 @@ ddpg = DDPG(     env_name=env, # Gym environment with continous action space
                  actor=None,
                  critic=None,
                  buffer=None,
-                 normalize_Q_by = 10, #1 no normalization, 10-1000 possible values
+                 normalize_Q_by = 1000, #1 no normalization, 10-1000 possible values
                  max_buffer_size =10000, # maximum transitions to be stored in buffer
                  batch_size = 64, # batch size for training actor and critic networks
                  max_time_steps = max_time_steps,# no of time steps per epoch
