@@ -10,7 +10,7 @@ import numpy as np
 import os
 os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 from buffer import Replay
-from actor_critic import _actor_network,_q_network
+from actor_critic import _actor_network,_q_network, _v_network, _env_network
 import math
 from collections import deque
 
@@ -75,6 +75,7 @@ class DDPG():
         self.ANN_Adam = Adam(self.act_learning_rate)
         self.QNN_Adam = Adam(self.critic_learning_rate)
 
+
         self.ANN_t = _actor_network(self.state_dim, self.action_dim).model()
         self.QNN_t = _q_network(self.state_dim, self.action_dim).model()
 
@@ -121,13 +122,14 @@ class DDPG():
             self.x += self.act_learning_rate
         self.tr += 1
 
+
     def ANN_update(self, ANN, QNN, opt_a, St):
         with tf.GradientTape(persistent=True) as tape:
             A = ANN(St)
             tape.watch(A)
             Q = QNN([St,A])
             R = tf.math.reduce_mean(Q)
-        dR_dA = tape.gradient(R, A) #first take gradient of dR/dA
+        dR_dA = tape.gradient(R, A) #first take gradient of dQ/dA
         dR_dA = tf.math.abs(dR_dA)*tf.math.tanh(dR_dA) #then smooth it
         dA_dW = tape.gradient(A, ANN.trainable_variables, output_gradients=-dR_dA) #then apply to action network
         opt_a.apply_gradients(zip(dA_dW, ANN.trainable_variables))
@@ -141,11 +143,13 @@ class DDPG():
         dL_dw = tape.gradient(L, NN.trainable_variables)
         opt.apply_gradients(zip(dL_dw, NN.trainable_variables))
 
+
     def TD_secure(self):
         St, At, Stn, Atn, Stn_, Tn, Qt = self.replay.restore(self.n_step, self.gamma)
         An_ = self.ANN_t(Stn_)
         Qn_ = self.QNN_t([Stn_, An_])
         Q = Qt + (1-Tn)*self.gamma**self.n_step*Qn_
+        Q += 0.01*tf.math.log(self.eps)/self.norm
 
         self.NN_update(self.QNN, self.QNN_Adam, [St, At], Q)
         self.ANN_update(self.ANN, self.QNN, self.ANN_Adam, St)
@@ -155,6 +159,7 @@ class DDPG():
     def update_target(self):
         self.tow_update(self.ANN_t, self.ANN, 0.001)
         self.tow_update(self.QNN_t, self.QNN, 0.001)
+
 
 
     def tow_update(self, target, online, tow):
@@ -171,7 +176,8 @@ class DDPG():
         self.ANN.save('./models/actor_pred.h5')
         self.QNN.save('./models/critic_pred.h5')
         self.ANN_t.save('./models/actor_target.h5')
-        self.QNN_t.save('./models/critic_target.h5')
+        self.QNN_t.save('./models/critic_target1.h5')
+
 
     def sigmoid(self, x):
         return 1/(1+math.exp(-x))
@@ -317,7 +323,7 @@ ddpg = DDPG(     env_name=env, # Gym environment with continous action space
                  max_buffer_size =10000, # maximum transitions to be stored in buffer
                  batch_size = 64, # batch size for training actor and critic networks
                  max_time_steps = max_time_steps,# no of time steps per epoch
-                 gamma  = 0.98,
+                 gamma  = 0.995,
                  explore_time = 10000,
                  actor_learning_rate = actor_learning_rate,
                  critic_learning_rate = critic_learning_rate,
