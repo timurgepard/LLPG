@@ -10,7 +10,7 @@ import numpy as np
 import os
 os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 from buffer import Replay
-from actor_critic import _actor_network,_q_network, _v_network, _env_network
+from actor_critic import _actor_network,_q_network
 import math
 from collections import deque
 
@@ -58,7 +58,7 @@ class DDPG():
         self.observ_max = self.env.observation_space.high
         self.action_dim = action_dim = self.env.action_space.shape[0]
 
-        self.x =-2.0
+        self.x = -3.0
         self.eps = 1.0
         self.gamma = gamma
         self.norm = normalize_Q_by
@@ -67,7 +67,7 @@ class DDPG():
         observation_dim = len(self.env.reset())
         self.state_dim = state_dim = observation_dim
 
-        self.n_step = 1
+        self.n_step = 4
         self.n_steps = batch_size
         self.T = max_time_steps  ## Time limit for a episode
         self.replay = Replay(self.max_buffer_size, self.max_record_size, self.batch_size)
@@ -94,7 +94,7 @@ class DDPG():
 
 
     def chose_action(self, state):
-        action = self.ANN(state)[0] + tf.random.normal([self.action_dim], 0.0, self.eps+0.1)
+        action = self.ANN(state)[0] + tf.random.normal([self.action_dim], 0.0, self.eps+0.2)
         return np.clip(action, -1.0, 1.0)
 
     def update_buffer(self):
@@ -117,7 +117,7 @@ class DDPG():
 
     def eps_step(self):
         self.eps =  (1.0-self.sigmoid(self.x))
-        self.n_step = round(1/self.eps)
+        self.n_step = 4*round(1/self.eps)
         if self.n_step<self.stop_n_step:
             self.x += self.act_learning_rate
         self.tr += 1
@@ -149,7 +149,7 @@ class DDPG():
         An_ = self.ANN_t(Stn_)
         Qn_ = self.QNN_t([Stn_, An_])
         Q = Qt + (1-Tn)*self.gamma**self.n_step*Qn_
-        Q += 0.01*tf.math.log(self.eps)/self.norm
+        #Q += 0.01*tf.math.log(self.eps)/self.norm
 
         self.NN_update(self.QNN, self.QNN_Adam, [St, At], Q)
         self.ANN_update(self.ANN, self.QNN, self.ANN_Adam, St)
@@ -202,7 +202,7 @@ class DDPG():
             done, T = False, False
             rewards = []
             for t in range(self.T):
-                #self.env.render(mode="human")
+                self.env.render(mode="human")
                 action = self.chose_action(state)
                 state_next, reward, done, info = self.env.step(action)  # step returns obs+1, reward, done
                 state_next = np.array(state_next).reshape(1, self.state_dim)
@@ -233,7 +233,7 @@ class DDPG():
                     self.update_buffer()
 
 
-                if len(self.replay.record)>self.batch_size and self.cnt>int(self.explore_time/2):
+                if len(self.replay.record)>self.batch_size:
                     if self.cnt%self.n_step==0:
                         if self.gradual_start(self.cnt, self.explore_time): # starts training gradualy globally
                             if self.gradual_start(t, self.n_steps): # starts training gradually within episode
@@ -253,7 +253,7 @@ class DDPG():
             with open('Scores.txt', 'a+') as f:
                 f.write(str(score) + '\n')
 
-            print('%d: %f, %f, | once in %d step, eps %f| record %d| step %d| tr step %d' % (episode, score, avg_score, round(1/self.eps), self.eps, len(self.replay.record), self.cnt, self.tr))
+            print('%d: %f, %f, | once in %d step, eps %f| record %d| step %d| tr step %d' % (episode, score, avg_score, self.n_step, self.eps, len(self.replay.record), self.cnt, self.tr))
 
     def test(self):
         with open('Scores.txt', 'w+') as f:
@@ -294,7 +294,7 @@ elif option == 2:
     critic_learning_rate = 0.001
 elif option == 3:
     env = 'BipedalWalker-v3'
-    max_time_steps = 200
+    max_time_steps = 1000
     actor_learning_rate = 0.0001
     critic_learning_rate = 0.001
 elif option == 4:
@@ -320,10 +320,10 @@ ddpg = DDPG(     env_name=env, # Gym environment with continous action space
                  buffer=None,
                  stop_n_step = 16,
                  normalize_Q_by = 1, #1 no normalization, 10-1000 possible values
-                 max_buffer_size =10000, # maximum transitions to be stored in buffer
+                 max_buffer_size =100000, # maximum transitions to be stored in buffer
                  batch_size = 64, # batch size for training actor and critic networks
                  max_time_steps = max_time_steps,# no of time steps per epoch
-                 gamma  = 0.99,
+                 gamma  = 0.98,
                  explore_time = 10000,
                  actor_learning_rate = actor_learning_rate,
                  critic_learning_rate = critic_learning_rate,
