@@ -149,8 +149,6 @@ class DDPG():
         An_ = self.ANN_t(Stn_)
         Qn_ = self.QNN_t([Stn_, An_])
         Q = Qt + (1-Tn)*self.gamma**self.n_step*Qn_
-        Q += 0.01*tf.math.log(self.eps)/self.norm
-
         self.NN_update(self.QNN, self.QNN_Adam, [St, At], Q)
         self.ANN_update(self.ANN, self.QNN, self.ANN_Adam, St)
         self.update_target()
