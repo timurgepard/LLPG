@@ -153,8 +153,8 @@ class DDPG():
 
 
     def update_target(self):
-        self.tow_update(self.ANN_t, self.ANN, 0.1)
-        self.tow_update(self.QNN_t, self.QNN, 0.1)
+        self.tow_update(self.ANN_t, self.ANN, 0.001)
+        self.tow_update(self.QNN_t, self.QNN, 0.001)
 
 
     def tow_update(self, target, online, tow):
