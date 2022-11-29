@@ -100,7 +100,7 @@ class DDPG():
     def chose_action(self, state):
         action = self.ANN(state)[0]
         #if random.uniform(0.0,1.0)<self.eps:
-        action += tf.random.normal([self.action_dim], 0.0, self.std_coef*self.eps)
+        action += tf.random.normal([self.action_dim], 0.0, self.std_coef*self.eps+0.1)
         return np.clip(action, -1.0, 1.0)
 
     def update_buffer(self):
@@ -288,7 +288,7 @@ class DDPG():
             with open('Scores.txt', 'a+') as f:
                 f.write(str(score) + '\n')
 
-option = 3
+option = 1
 #std_coef is multiplicator of epsilon for standard deviation.
 
 if option == 1:
