@@ -95,7 +95,7 @@ class DDPG():
 
     def chose_action(self, state):
         action = self.ANN(state)[0]
-        action += tf.random.normal([self.action_dim], 0.0, 0.5*self.eps+0.2)
+        action += tf.random.normal([self.action_dim], 0.0, 0.5)
         return np.clip(action, -1.0, 1.0)
 
     def update_buffer(self):
@@ -118,9 +118,8 @@ class DDPG():
 
     def eps_step(self):
         self.eps =  1.0-self.sigmoid(self.x)
-        self.tau = 0.1*(1-self.eps) #keeps small lag 0.1 between target and prediction
-        self.n_step = 4*round(1/self.eps)
-        self.train_step = int(self.n_step/2)
+        self.train_step = 2**round(1/self.eps)
+        self.n_step = 2*self.train_step
 
         if self.n_step<self.n_steps:
             self.x += self.act_learning_rate
@@ -283,7 +282,7 @@ class DDPG():
             with open('Scores.txt', 'a+') as f:
                 f.write(str(score) + '\n')
 
-option = 3
+option = 2
 
 if option == 1:
     env = 'Pendulum-v0'
