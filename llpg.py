@@ -118,6 +118,7 @@ class DDPG():
 
     def eps_step(self):
         self.eps =  1.0-self.sigmoid(self.x)
+        self.tau = 0.1*(1.0-self.eps)
         self.train_step = 2**round(1/self.eps)
         self.n_step = 2*self.train_step
 
@@ -152,7 +153,7 @@ class DDPG():
         An_ = self.ANN_t(Stn_)
         Qn_ = self.QNN_t([Stn_, An_])
         Q = Qt + (1-Tn)*self.gamma**self.n_step*Qn_
-        Q += 0.01*tf.math.log(self.eps)/self.norm #small compensation to epsilon manual decrease
+        #Q += 0.01*tf.math.log(self.eps)/self.norm #small compensation to epsilon manual decrease
         self.NN_update(self.QNN, self.QNN_Adam, [St, At], Q)
         self.ANN_update(self.ANN, self.QNN, self.ANN_Adam, St)
         self.update_target()
