@@ -29,7 +29,6 @@ class DDPG():
                  actor=None,
                  critic=None,
                  buffer=None,
-                 n_steps=64,
                  normalize_Q_by = 1,
                  max_buffer_size =10000, # maximum transitions to be stored in buffer
                  cross_fire=True,
@@ -58,23 +57,23 @@ class DDPG():
         self.observ_max = self.env.observation_space.high
         self.action_dim = action_dim = self.env.action_space.shape[0]
 
-        self.x = -3.0
+        self.x = -5.0
         self.eps = 1.0
         self.gamma = gamma
         self.norm = normalize_Q_by
-        self.n_steps = n_steps
+        self.n_steps = batch_size
 
         observation_dim = len(self.env.reset())
         self.state_dim = state_dim = observation_dim
 
-        self.n_step = 2
+        self.n_step = 1
         self.train_step = 1
+        self.tau = 0.001
         self.T = max_time_steps  ## Time limit for a episode
         self.replay = Replay(self.max_buffer_size, self.max_record_size, self.batch_size)
 
         self.ANN_Adam = Adam(self.act_learning_rate)
         self.QNN_Adam = Adam(self.critic_learning_rate)
-
 
         self.ANN_t = _actor_network(self.state_dim, self.action_dim).model()
         self.QNN_t = _q_network(self.state_dim, self.action_dim).model()
@@ -86,7 +85,7 @@ class DDPG():
         self.QNN_t.set_weights(self.QNN.get_weights())
 
         self.tr = 0
-        self.n_step = 4
+
 
         print("Env:", env_name)
         #############################################
@@ -96,8 +95,7 @@ class DDPG():
 
     def chose_action(self, state):
         action = self.ANN(state)[0]
-        #if random.uniform(0.0,1.0)<self.eps:
-        action += tf.random.normal([self.action_dim], 0.0, self.eps)
+        action += tf.random.normal([self.action_dim], 0.0, 0.5*self.eps+0.2)
         return np.clip(action, -1.0, 1.0)
 
     def update_buffer(self):
@@ -119,9 +117,10 @@ class DDPG():
     #############################################
 
     def eps_step(self):
-        self.eps =  (1.0-self.sigmoid(self.x))
-        self.train_step = 4*round(1/self.eps)
-        self.n_step = self.train_step
+        self.eps =  1.0-self.sigmoid(self.x)
+        self.tau = 0.1*(1-self.eps) #keeps small lag 0.1 between target and prediction
+        self.n_step = 4*round(1/self.eps)
+        self.train_step = int(self.n_step/2)
 
         if self.n_step<self.n_steps:
             self.x += self.act_learning_rate
@@ -154,16 +153,15 @@ class DDPG():
         An_ = self.ANN_t(Stn_)
         Qn_ = self.QNN_t([Stn_, An_])
         Q = Qt + (1-Tn)*self.gamma**self.n_step*Qn_
-        #Q += 0.01*tf.math.log(self.eps)/self.norm
-
+        Q += 0.01*tf.math.log(self.eps)/self.norm #small compensation to epsilon manual decrease
         self.NN_update(self.QNN, self.QNN_Adam, [St, At], Q)
         self.ANN_update(self.ANN, self.QNN, self.ANN_Adam, St)
         self.update_target()
 
 
     def update_target(self):
-        self.tow_update(self.ANN_t, self.ANN, 0.001)
-        self.tow_update(self.QNN_t, self.QNN, 0.001)
+        self.tow_update(self.ANN_t, self.ANN, self.tau)
+        self.tow_update(self.QNN_t, self.QNN, self.tau)
 
 
 
@@ -285,7 +283,7 @@ class DDPG():
             with open('Scores.txt', 'a+') as f:
                 f.write(str(score) + '\n')
 
-option = 2
+option = 3
 
 if option == 1:
     env = 'Pendulum-v0'
@@ -298,21 +296,11 @@ elif option == 2:
     actor_learning_rate = 0.0001
     critic_learning_rate = 0.001
 elif option == 3:
-    env = 'BipedalWalker-v3'
-    max_time_steps = 1000
+    env = 'HalfCheetahPyBulletEnv-v0'
+    max_time_steps = 200
     actor_learning_rate = 0.0001
     critic_learning_rate = 0.001
 elif option == 4:
-    env = 'HumanoidPyBulletEnv-v0'
-    max_time_steps = 200
-    actor_learning_rate = 0.0001
-    critic_learning_rate = 0.001
-elif option == 5:
-    env = 'HalfCheetahPyBulletEnv-v0'
-    max_time_steps = 200
-    actor_learning_rate = 0.00001
-    critic_learning_rate = 0.0001
-elif option == 6:
     env = 'MountainCarContinuous-v0'
     max_time_steps = 200
     actor_learning_rate = 0.0001
@@ -323,12 +311,11 @@ ddpg = DDPG(     env_name=env, # Gym environment with continous action space
                  actor=None,
                  critic=None,
                  buffer=None,
-                 n_steps = 64,
                  normalize_Q_by = 1, #1 no normalization, 10-1000 possible values
                  max_buffer_size =100000, # maximum transitions to be stored in buffer
-                 batch_size = 64, # batch size for training actor and critic networks
+                 batch_size = 128, # batch size for training actor and critic networks
                  max_time_steps = max_time_steps,# no of time steps per epoch
-                 gamma  = 0.98,
+                 gamma  = 0.995,
                  explore_time = 10000,
                  actor_learning_rate = actor_learning_rate,
                  critic_learning_rate = critic_learning_rate,
