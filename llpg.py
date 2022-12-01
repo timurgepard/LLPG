@@ -57,17 +57,18 @@ class DDPG():
         self.observ_max = self.env.observation_space.high
         self.action_dim = action_dim = self.env.action_space.shape[0]
 
-        self.x = -5.0
-        self.eps = 1.0
-        self.gamma = gamma
-        self.norm = normalize_Q_by
-        self.n_steps = batch_size
+
 
         observation_dim = len(self.env.reset())
         self.state_dim = state_dim = observation_dim
 
-        self.n_step = 1
-        self.train_step = 1
+        self.x = -5.0
+        self.eps = 1.0
+        self.gamma = gamma
+        self.norm = normalize_Q_by
+        self.n_steps = 2*batch_size
+        self.n_step = 4
+        self.train_step = 4
         self.tau = 0.001
         self.T = max_time_steps  ## Time limit for a episode
         self.replay = Replay(self.max_buffer_size, self.max_record_size, self.batch_size)
@@ -95,7 +96,7 @@ class DDPG():
 
     def chose_action(self, state):
         action = self.ANN(state)[0]
-        action += tf.random.normal([self.action_dim], 0.0, 0.5)
+        action += tf.random.normal([self.action_dim], 0.0, self.eps)
         return np.clip(action, -1.0, 1.0)
 
     def update_buffer(self):
@@ -119,8 +120,8 @@ class DDPG():
     def eps_step(self):
         self.eps =  1.0-self.sigmoid(self.x)
         self.tau = 0.1*(1.0-self.eps)
-        self.train_step = 2**round(1/self.eps)
-        self.n_step = 2*self.train_step
+        self.train_step = 2*2**round(1/self.eps)
+        self.n_step = self.train_step
 
         if self.n_step<self.n_steps:
             self.x += self.act_learning_rate
@@ -139,22 +140,24 @@ class DDPG():
         opt_a.apply_gradients(zip(dA_dW, ANN.trainable_variables))
 
 
-    def NN_update(self,NN,opt,input,output):
+    def NN_update(self,NN,opt,input,output,idx):
         with tf.GradientTape() as tape:
             e = output-NN(input)
             e = e*tf.math.tanh(e)   #differetiable abs(x): xtanh
             L = tf.math.reduce_mean(e)
+        self.replay.add_priorities(idx,e)
         dL_dw = tape.gradient(L, NN.trainable_variables)
         opt.apply_gradients(zip(dL_dw, NN.trainable_variables))
 
 
     def TD_secure(self):
-        St, At, Stn, Atn, Stn_, Tn, Qt = self.replay.restore(self.n_step, self.gamma)
+        St, At, Stn, Atn, Stn_, Tn, Qt, idx = self.replay.restore(self.n_step, self.gamma)
         An_ = self.ANN_t(Stn_)
         Qn_ = self.QNN_t([Stn_, An_])
         Q = Qt + (1-Tn)*self.gamma**self.n_step*Qn_
         #Q += 0.01*tf.math.log(self.eps)/self.norm #small compensation to epsilon manual decrease
-        self.NN_update(self.QNN, self.QNN_Adam, [St, At], Q)
+        #Q = np.abs(Q)*np.tanh(Q)
+        self.NN_update(self.QNN, self.QNN_Adam, [St, At], Q, idx)
         self.ANN_update(self.ANN, self.QNN, self.ANN_Adam, St)
         self.update_target()
 
@@ -205,7 +208,7 @@ class DDPG():
             done, T = False, False
             rewards = []
             for t in range(self.T):
-                #self.env.render(mode="human")
+                self.env.render(mode="human")
                 action = self.chose_action(state)
                 state_next, reward, done, info = self.env.step(action)  # step returns obs+1, reward, done
                 state_next = np.array(state_next).reshape(1, self.state_dim)
@@ -236,12 +239,11 @@ class DDPG():
                     self.update_buffer()
 
 
-                if len(self.replay.record)>self.batch_size:
+                if len(self.replay.record)>20*self.batch_size:
                     if self.cnt%(self.train_step)==0:
                         if self.gradual_start(self.cnt, self.explore_time): # starts training gradualy globally
-                            if self.gradual_start(t, self.n_steps): # starts training gradually within episode
-                                self.eps_step()
-                                self.TD_secure()
+                            self.eps_step()
+                            self.TD_secure()
 
 
             self.update_buffer()
@@ -252,7 +254,7 @@ class DDPG():
 
             score = sum(rewards)
             score_history.append(score)
-            avg_score = np.mean(score_history[-100:])
+            avg_score = np.mean(score_history[-20:])
             with open('Scores.txt', 'a+') as f:
                 f.write(str(score) + '\n')
 
@@ -279,43 +281,58 @@ class DDPG():
                 if done: break
             score = sum(rewards)
             score_history.append(score)
-            avg_score = np.mean(score_history[-10:])
+            avg_score = np.mean(score_history[-20:])
             with open('Scores.txt', 'a+') as f:
                 f.write(str(score) + '\n')
 
-option = 2
+option = 7
 
 if option == 1:
     env = 'Pendulum-v0'
-    max_time_steps = 200
-    actor_learning_rate = 0.001
-    critic_learning_rate = 0.01
+    max_time_steps = 400
+    actor_learning_rate = 0.002
+    critic_learning_rate = 0.02
 elif option == 2:
     env = 'LunarLanderContinuous-v2'
-    max_time_steps = 200
-    actor_learning_rate = 0.0001
-    critic_learning_rate = 0.001
+    max_time_steps = 400
+    actor_learning_rate = 0.0002
+    critic_learning_rate = 0.002
 elif option == 3:
     env = 'HalfCheetahPyBulletEnv-v0'
-    max_time_steps = 200
-    actor_learning_rate = 0.0001
-    critic_learning_rate = 0.001
+    max_time_steps = 400
+    actor_learning_rate = 0.0002
+    critic_learning_rate = 0.002
 elif option == 4:
     env = 'MountainCarContinuous-v0'
-    max_time_steps = 200
-    actor_learning_rate = 0.0001
-    critic_learning_rate = 0.001
+    max_time_steps = 400
+    actor_learning_rate = 0.0002
+    critic_learning_rate = 0.002
+elif option == 5:
+    env = 'BipedalWalker-v3'
+    max_time_steps = 400
+    actor_learning_rate = 0.0002
+    critic_learning_rate = 0.002
+elif option == 6:
+    env = 'HumanoidPyBulletEnv-v0'
+    max_time_steps = 400
+    actor_learning_rate = 0.0002
+    critic_learning_rate = 0.002
+elif option == 7:
+    env = 'Walker2DPyBulletEnv-v0'
+    max_time_steps = 400
+    actor_learning_rate = 0.0002
+    critic_learning_rate = 0.002
 
 
 ddpg = DDPG(     env_name=env, # Gym environment with continous action space
                  actor=None,
                  critic=None,
                  buffer=None,
-                 normalize_Q_by = 1, #1 no normalization, 10-1000 possible values
+                 normalize_Q_by = 1000, #This brings Q -> r range, learning rate is adjusted.
                  max_buffer_size =100000, # maximum transitions to be stored in buffer
                  batch_size = 128, # batch size for training actor and critic networks
                  max_time_steps = max_time_steps,# no of time steps per epoch
-                 gamma  = 0.995,
+                 gamma  = 0.99,
                  explore_time = 10000,
                  actor_learning_rate = actor_learning_rate,
                  critic_learning_rate = critic_learning_rate,
