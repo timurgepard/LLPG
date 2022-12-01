@@ -25,12 +25,12 @@ class Replay:
 
     def add_priorities(self,indices,priorites):
         for idx,priority in zip(indices,priorites):
-            self.priorites[idx]=priority
+            self.priorites[idx]=priority[0].numpy()
 
     #instead of one transition roll-out is saved for current time step for future steps with length = batch_size
     def add_roll_outs(self, roll_out):
         self.record.append(roll_out)
-        self.priorites.append(1.0)
+        self.priorites.append(100.0)
         ln = len(self.record)
         if ln <= self.max_record_size: self.indexes.append(ln-1)
 
@@ -38,8 +38,10 @@ class Replay:
         #combined exp replay: add last n steps to batch:
         #cer = random.sample(self.record, self.batch_size-n_step)+[self.record[indx-1] for indx in range(-n_step,0)]
         #roll-outs are retrieved here
-        sample = random.sample(self.indexes, 20*self.batch_size)
-        indices = random.choices(sample, weights= [self.priorites[indx-1] for indx in sample], k = self.batch_size)
+        
+        sample = np.random.default_rng().choice(self.indexes, size=20*self.batch_size, replace=False)
+        priorites = np.array(self.priorites)[sample]
+        indices = np.random.default_rng().choice(sample, size=self.batch_size, p=(priorites/np.sum(priorites)), replace=False)
         arr = np.array([self.record[indx-1] for indx in indices])
 
         Sts =  np.vstack(arr[:, 0, :])
