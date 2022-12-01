@@ -66,7 +66,7 @@ class DDPG():
         self.eps = 1.0
         self.gamma = gamma
         self.norm = normalize_Q_by
-        self.n_steps = 2*batch_size
+        self.n_steps = batch_size
         self.n_step = 4
         self.train_step = 4
         self.tau = 0.001
@@ -339,4 +339,3 @@ ddpg = DDPG(     env_name=env, # Gym environment with continous action space
                  n_episodes = 1000000) # no of episodes to run
 
 ddpg.train()
-
