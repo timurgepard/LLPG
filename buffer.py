@@ -14,6 +14,7 @@ class Replay:
     def __init__(self, max_buffer_size, max_record_size, batch_size):
         self.max_record_size = max_record_size
         self.batch_size = batch_size
+        self.sample_size = 20*self.batch_size
         self.record = deque(maxlen=max_record_size)
         self.cache = []
         self.priorites = deque(maxlen=max_buffer_size)
@@ -38,10 +39,9 @@ class Replay:
         #combined exp replay: add last n steps to batch:
         #cer = random.sample(self.record, self.batch_size-n_step)+[self.record[indx-1] for indx in range(-n_step,0)]
         #roll-outs are retrieved here
-        
-        sample = np.random.default_rng().choice(self.indexes, size=20*self.batch_size, replace=False)
+        sample = np.random.default_rng().choice(self.indexes, size=self.sample_size, replace=False)
         priorites = np.array(self.priorites)[sample]
-        indices = np.random.default_rng().choice(sample, size=self.batch_size, p=(priorites/np.sum(priorites)), replace=False)
+        indices = np.random.default_rng().choice(sample, size=self.batch_size, p=priorites/np.sum(priorites), replace=False)
         arr = np.array([self.record[indx-1] for indx in indices])
 
         Sts =  np.vstack(arr[:, 0, :])
