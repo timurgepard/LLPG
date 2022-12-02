@@ -124,7 +124,7 @@ class DDPG():
         self.n_step = self.train_step
 
         if self.n_step<self.n_steps:
-            self.x += self.act_learning_rate
+            self.x += 0.1*self.act_learning_rate
         self.tr += 1
 
 
@@ -145,7 +145,7 @@ class DDPG():
             e = output-NN(input)
             e = e*tf.math.tanh(e)   #differetiable abs(x): xtanh
             L = tf.math.reduce_mean(e)
-        self.replay.add_priorities(idx,e)
+        self.replay.add_priorities(idx,100*e+1e-3)
         dL_dw = tape.gradient(L, NN.trainable_variables)
         opt.apply_gradients(zip(dL_dw, NN.trainable_variables))
 
@@ -155,7 +155,7 @@ class DDPG():
         An_ = self.ANN_t(Stn_)
         Qn_ = self.QNN_t([Stn_, An_])
         Q = Qt + (1-Tn)*self.gamma**self.n_step*Qn_
-        #Q += 0.01*tf.math.log(self.eps)/self.norm #small compensation to epsilon manual decrease
+        Q += 0.01*tf.math.log(self.eps)/self.norm #small compensation to epsilon manual decrease
         #Q = np.abs(Q)*np.tanh(Q)
         self.NN_update(self.QNN, self.QNN_Adam, [St, At], Q, idx)
         self.ANN_update(self.ANN, self.QNN, self.ANN_Adam, St)
@@ -254,7 +254,7 @@ class DDPG():
 
             score = sum(rewards)
             score_history.append(score)
-            avg_score = np.mean(score_history[-20:])
+            avg_score = np.mean(score_history[-100:])
             with open('Scores.txt', 'a+') as f:
                 f.write(str(score) + '\n')
 
