@@ -62,7 +62,7 @@ class DDPG():
         self.rewards_norm = divide_rewards_by
 
         self.n_steps = n_steps
-        self.tr_steps = 4
+        self.tr_steps = 2
         self.horizon = int(batch_size/8)
         self.max_steps = max_time_steps  ## Time limit for a episode
         self.replay = Replay(self.max_record_size, self.batch_size)
@@ -114,7 +114,8 @@ class DDPG():
 
     def eps_step(self):
         self.eps = math.exp(-self.x)
-        self.n_steps = 2**round(1/self.eps)
+        self.tr_steps = 2**round(1/self.eps)
+        self.n_steps = 2*self.tr_steps
         if self.n_steps<self.horizon:
             self.x += 0.2*self.act_learning_rate
 
